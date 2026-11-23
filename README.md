@@ -70,22 +70,21 @@ FinVault/
 │               ├── colors.xml
 │               ├── strings.xml
 │               └── themes.xml
+├── BUILDING.md                        # Step-by-Step Source Build Guide (CodeAssist & Android Studio)
 ├── CHANGELOG.md                       # Separated Major, Minor & Patch Release History
 ├── LICENSE                            # MIT Open-Source License
 └── README.md
 ```
 
-## Building the Application
+## Building from Source
 
-### On Mobile (CodeAssist)
-1. Clone or sync this repository into your **CodeAssist** workspace (`com.yuri.finvault`, `minSdk 26`, `targetSdk 36`).
-2. Verify `versionCode = 5` and `versionName = "2.3.0"` in `app/module.toml` and that source code resides in `app/src/main/kotlin/com/yuri/finvault/MainActivity.kt`.
-3. Tap **Run (▶)** → **Run Debug · app** (or **Run Release · app** with your signing keystore for GitHub Releases).
+Want to inspect, customize, or compile **FinVault Yuri** yourself? You do not need any special AI tools or proprietary setup—just the source code and **CodeAssist** (Mobile or PC) or **Android Studio**.
 
-### On PC (Antigravity + CodeAssist / Android Emulator)
-1. Edit source files and manage Git commits from **Antigravity**.
-2. Compile the APK via **CodeAssist** (`app/module.toml` native build system—no Gradle files are used).
-3. Test on an Android Studio Virtual Device via `adb install -r <path-to-apk>`.
+- **Quick Install (Pre-Built APK):** Download the latest signed APK directly from [GitHub Releases](https://github.com/YuriRinkashime/FinVault/releases/latest).
+- **CodeAssist (Android Phone & Windows Desktop):** Uses `app/module.toml` directly (`com.yuri.finvault`, `minSdk 26`, `targetSdk 36`) with all source code in `app/src/main/kotlin/com/yuri/finvault/MainActivity.kt`.
+- **Android Studio (Gradle):** Drop `MainActivity.kt`, `AndroidManifest.xml`, and `res/` into a standard Jetpack Compose project.
+
+See the complete step-by-step instructions, `.platform/` setup tips, ADB install commands, and troubleshooting in **[BUILDING.md](BUILDING.md)**.
 
 ## Author & Credits
 
