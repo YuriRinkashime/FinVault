@@ -1,18 +1,19 @@
 <p align="center">
-  <img src="assets/finvault-icon-512.png" alt="FinVault Application Icon" width="128" height="128" />
+  <img src="assets/finvault-icon-512.png" alt="FinVault Yuri Application Icon" width="128" height="128" />
 </p>
 
-<h1 align="center">FinVault</h1>
+<h1 align="center">FinVault Yuri</h1>
 
 <p align="center">
-  <strong>Offline Personal Budget & Savings Visualizer for Android</strong><br />
-  Built with Kotlin, Jetpack Compose, and Material 3
+  <strong>Offline Dual-Vault Budget Tracker, Savings Reserve & Impulse Control App for Android</strong><br />
+  Built with Kotlin, Jetpack Compose, and Material 3 by Yuri Rinkashime
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-2.2.0-38BDF8?style=flat-square" alt="Version 2.2.0" />
+  <img src="https://img.shields.io/badge/Version-2.3.0%20Stable-38BDF8?style=flat-square" alt="Version 2.3.0 Stable" />
   <img src="https://img.shields.io/badge/Platform-Android%208.0%2B%20(API%2026%2B)-10B981?style=flat-square" alt="Android 8.0+" />
   <img src="https://img.shields.io/badge/UI-Jetpack%20Compose%20%2B%20Material%203-818CF8?style=flat-square" alt="Jetpack Compose" />
+  <img src="https://img.shields.io/badge/Privacy-100%25%20Offline%20%E2%80%A2%20Zero%20Ads-14B8A6?style=flat-square" alt="100% Offline" />
   <img src="https://img.shields.io/badge/License-MIT-F59E0B?style=flat-square" alt="MIT License" />
 </p>
 
@@ -20,19 +21,30 @@
 
 ## Overview
 
-**FinVault** is a lightweight, 100% offline personal finance application designed for speed, privacy, and visual clarity on modern Android devices. All records are stored locally on your device with zero accounts, zero tracking, and zero cloud dependencies.
+**FinVault Yuri** (`com.yuri.finvault`) is a lightweight, 100% open-source, offline-first personal finance application for Android featuring a pure AMOLED **Matte Titanium** aesthetic. All financial records remain strictly on your device with zero accounts, zero cloud lock-in, zero ads, and zero telemetry.
+
+## Why FinVault Yuri?
+
+| Capability | FinVault Yuri | Typical Budget Apps |
+| :--- | :--- | :--- |
+| **Dual-Vault Architecture** | Separate **Liquid Vault** & **Goal Reserve Vault** with combined **Total Net Worth** & one-tap **Set Balance** sync | Single flat balance that mixes spending cash and savings |
+| **Impulse Cooling-Off Vault** | Lock planned buys for **24h / 72h / 7d** before deciding—or **Resist & Save** into a goal | No impulse cooling-off timer |
+| **Time-Cost Converter** | Converts purchase prices & monthly spending into **Hours of Work** | Currency numbers only |
+| **Monthly Discipline Heatmap** | Interactive zero-spend / on-pace / peak-spend calendar grid | Basic pie charts only |
+| **Privacy & Storage** | 100% local storage, verified JSON backup/restore, CSV export, optional public GitHub release check | Mandatory accounts, cloud sync, or ads |
 
 ## Key Features
 
-- **Matte Titanium Ledger Card:** Displays Net Liquid Balance, Vault Savings Reserved, Monthly Spending Cap progress, **Safe to Spend Today** daily allowance, and estimated **Cash Runway**.
-- **Purchase Impact Simulator:** Preview how a planned purchase affects your liquid balance, monthly cap, daily allowance, and savings goal opportunity cost—with a one-tap **Skip Purchase & Save** button to reward disciplined spending.
-- **Month Navigator & Live Search:** Browse transaction history by individual month or across **All Time**, search instantly by title, category, or note, and filter by **All**, **Expenses**, or **Income**.
-- **Quick Presets & Undo Delete:** Save recurring allowances or expenses for one-tap logging, choose transaction dates (**Today**, **Yesterday**, **2 Days Ago**), duplicate entries, and recover accidental removals with a 5-second **Undo** banner.
-- **Financial Insights Dashboard:** Includes a live **Vault Health Score (0–100)**, **No-Spend Streak** tracker, **Largest Expense** spotlight, **Cash Flow Balance** comparison, **Seven-Day Spend Trend** curve, and an interactive **Category Allocation** ring.
-- **Milestone Savings Goals:** Track multiple savings targets with 25% / 50% / 75% milestone markers, custom accent colors, one-tap deposit presets, and full goal editing.
-- **Offline Backup & Spreadsheet Export:** Export or restore full **JSON** backups and generate **CSV** spreadsheet statements directly via clipboard.
-- **Built-In Support & Privacy-Safe Diagnostics:** Contact the developer via Email, GitHub Issues, or Android Share Sheet with optional diagnostic and crash logs (strictly excluding financial amounts and personal notes).
-- **Curated Themes & Privacy Masking:** Switch between **Titanium Ice**, **Jade Slate**, **Cobalt Pulse**, and **Rose Quartz**, and toggle one-tap balance masking (`₱••••••`).
+- **Dual-Vault Matte Titanium Ledger:** Separates spendable **Liquid Vault Balance** from your **Goal Reserve Vault** (with combined **Total Net Worth**), one-tap **Set Balance** sync, Monthly Spending Cap progress, **Safe to Spend Today**, and **Cash Runway**.
+- **Goal Transfers & Withdrawals:** Deposit directly into any Savings Goal from the Expense dialog or Goals tab (from Liquid Vault or external reserves), and withdraw partial or full goal reserves back to Liquid Balance anytime.
+- **Exclusive Behavioral Finance Tools:**
+  - **Impulse Cooling-Off Quarantine Vault:** Lock planned purchases for 24h, 72h, or 7 days before deciding—or **Resist & Save** into a goal to build your **Impulse Resisted** score.
+  - **Time-Cost ("Work Hours") Converter:** Translate purchase prices and monthly spend into hours of work using your optional hourly rate.
+  - **Monthly Discipline Heatmap:** Interactive calendar grid tracking zero-spend, on-pace, and peak spending days.
+- **First-Time Setup & Motion Controls:** 4-step guided onboarding (preserving all data when upgrading from `v2.2.0`), plus a global **Smooth Animations** toggle in Settings.
+- **GitHub Release Update Scanner & Developer Settings:** Privacy-safe scanner for official stable releases with direct APK download links—plus a hidden 7-tap **Developer Settings** menu to opt into pre-release builds or replay setup.
+- **Month Navigator, Live Search & Quick Presets:** Browse history by month or **All Time** with a live Period Summary (`In / Spend / Net`), search instantly, use Quick Presets, duplicate entries, and recover deletions with a 5-second **Undo** banner.
+- **Offline Backup & Diagnostics:** Export/restore verified **JSON** backups with one-tap clipboard paste, generate **CSV** spreadsheet statements, and share privacy-safe crash/diagnostic logs.
 
 ## Project Structure
 
@@ -41,9 +53,11 @@ FinVault/
 ├── assets/
 │   └── finvault-icon-512.png          # High-Resolution Repository & Release Icon
 ├── app/
+│   ├── module.toml                    # CodeAssist Native Android Build Config
 │   └── src/main/
+│       ├── AndroidManifest.xml
 │       ├── kotlin/com/yuri/finvault/
-│       │   └── MainActivity.kt        # Complete Jetpack Compose Application
+│       │   └── MainActivity.kt        # Complete FinVault Yuri Compose App
 │       └── res/
 │           ├── drawable/
 │           │   ├── ic_launcher_background.xml
@@ -51,8 +65,12 @@ FinVault/
 │           ├── mipmap-anydpi-v26/
 │           │   ├── ic_launcher.xml
 │           │   └── ic_launcher_round.xml
-│           └── mipmap-*/              # Density-Specific Launcher Icons (mdpi–xxxhdpi)
-├── CHANGELOG.md                       # Separated Major & Minor Upgrade History
+│           ├── mipmap-*/              # Density-Specific Launcher Icons (mdpi–xxxhdpi)
+│           └── values/
+│               ├── colors.xml
+│               ├── strings.xml
+│               └── themes.xml
+├── CHANGELOG.md                       # Separated Major, Minor & Patch Release History
 ├── LICENSE                            # MIT Open-Source License
 └── README.md
 ```
@@ -60,21 +78,21 @@ FinVault/
 ## Building the Application
 
 ### On Mobile (CodeAssist)
-1. Create or open a **Jetpack Compose App** project with package name `com.yuri.finvault` (`minSdk 26`, `targetSdk 36`).
-2. Copy `app/src/main/java/com/yuri/finvault/MainActivity.kt` and the `app/src/main/res/` icon folders into your project directory.
-3. Update `versionCode` to `4` and `versionName` to `"2.2.0"` in `app/module.toml`.
-4. Tap **Run (▶)** → **Run Debug · app** (or **Run Release · app** with your signing keystore for GitHub Releases).
+1. Clone or sync this repository into your **CodeAssist** workspace (`com.yuri.finvault`, `minSdk 26`, `targetSdk 36`).
+2. Verify `versionCode = 5` and `versionName = "2.3.0"` in `app/module.toml` and that source code resides in `app/src/main/kotlin/com/yuri/finvault/MainActivity.kt`.
+3. Tap **Run (▶)** → **Run Debug · app** (or **Run Release · app** with your signing keystore for GitHub Releases).
 
-### On PC (Antigravity / Android Studio)
-1. Open the exported Gradle project in **Antigravity** or **Android Studio**.
-2. Verify `versionCode = 4` and `versionName = "2.2.0"` in `app/build.gradle.kts`.
-3. Build a debug or release APK via `./gradlew assembleRelease` or the IDE build action.
+### On PC (Antigravity + CodeAssist / Android Emulator)
+1. Edit source files and manage Git commits from **Antigravity**.
+2. Compile the APK via **CodeAssist** (`app/module.toml` native build system—no Gradle files are used).
+3. Test on an Android Studio Virtual Device via `adb install -r <path-to-apk>`.
 
 ## Author & Credits
 
 - **Creator & Lead Developer:** Yuri Rinkashime
 - **Repository:** [github.com/YuriRinkashime/FinVault](https://github.com/YuriRinkashime/FinVault)
+- **Bug Reports & Feature Requests:** [Open a GitHub Issue](https://github.com/YuriRinkashime/FinVault/issues/new)
 
 ## License
 
-This project is released under the **MIT License**. See the [LICENSE](LICENSE) file for complete terms.
+**FinVault Yuri** is released under the **MIT License**. See the [LICENSE](LICENSE) file for complete terms.

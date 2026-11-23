@@ -1,6 +1,30 @@
 # Changelog
 
-All notable changes to **FinVault** follow Semantic Versioning (`MAJOR.MINOR.PATCH`), separating **Major Releases** (`X.0.0`), **Minor Upgrades** (`X.Y.0`), and **Patch Updates** (`X.Y.Z`).
+All notable changes to **FinVault Yuri** follow Semantic Versioning (`MAJOR.MINOR.PATCH`), separating **Major Releases** (`X.0.0`), **Minor Upgrades** (`X.Y.0`), and **Patch Updates** (`X.Y.Z`).
+
+---
+
+## [v2.3.0] — Minor Release (Build 5, Stable Production) — 2026-11-23
+### Added
+- **FinVault Yuri Rebrand:** Official rebrand to **FinVault Yuri** across the app, launcher icon label, exports, diagnostics, and documentation while preserving `com.yuri.finvault` package compatibility and existing local data.
+- **First-Time Setup Wizard:** 4-step onboarding flow for Currency, Matte Titanium Theme, Starting Liquid Balance, Monthly Cap, Optional Hourly Rate, Smooth Animations, Haptics, Privacy Masking, and Update Checking. Automatically runs once for `v2.2.0` pre-release upgraders while preserving 100% of existing local records.
+- **Dual-Vault Architecture & Balance Sync:** Separated the spendable **Liquid Vault** from the dedicated **Goal Reserve Vault** (with combined **Total Net Worth** display) and added one-tap **Set Balance** synchronization without distorting ledger history.
+- **Expense-to-Goal Deposits & Goal Withdrawals:** Select a target Savings Goal directly while recording an Expense to transfer funds into its reserve vault, toggle **Transfer from Liquid Vault** during Goal Deposits, and withdraw partial or full reserves via **Withdraw from Goal** (with an option to return funds to your Liquid Vault).
+- **GitHub Release Update Scanner & Secret Developer Settings:** Scans `YuriRinkashime/FinVault` GitHub Releases (privacy-safe, zero personal data transmitted) with direct APK download support and excludes pre-releases by default. Tapping the Version header/row 7 times unlocks **Developer Settings** with an **Include Pre-Release Updates** channel toggle and **Replay Setup**.
+- **Exclusive Behavioral Finance Features:**
+  - **Impulse Cooling-Off Quarantine Vault:** Lock planned purchases from the Simulator for 24h, 72h, or 7 days before deciding—then **Resist & Save** into a Goal to grow your **Impulse Resisted** counter.
+  - **Time-Cost ("Work Hours") Converter:** Configure an optional Hourly Work Rate to view purchase costs and monthly spending in hours of work.
+  - **Monthly Discipline Heatmap:** Interactive current-month calendar matrix highlighting zero-spend days, on-pace days, and peak spending days on the Insights tab.
+- **Quality of Life & Motion Control:** Added a global **Smooth Animations** toggle (with instant zero-motion snaps when disabled), Quick Amount chips (`+50`/`+100`/`+250`/`+500`) in the Transaction Editor, and a live Period Summary strip (`In / Spend / Net`) beneath the Month Navigator.
+
+---
+
+## [v2.2.1] — Patch Release (Stability Hardening) — 2026-11-23
+### Fixed
+- **Crash Prevention (`LazyColumn` Keys & Storage Resilience):** Replaced raw `System.currentTimeMillis()` IDs with a monotonic unique ID generator (`nextUniqueId`), guarded rapid double-taps on **Undo**, and made JSON parsing fault-tolerant per record with ID deduplication.
+- **Strict JSON Backup Validation & Paste Tool:** Required verified `"app"` schema (`FinVault` / `FinVault Yuri`) before restoring (preventing accidental data wipes), added a one-tap **Paste** button, scrollable JSON input, live backup preview, and backwards-compatible restore of `v2.1.0`/`v2.2.0` backups.
+- **Exact Precision, Financial Math & Charts:** Migrated `monthlyBudget` storage from 32-bit `Float` to exact `Double`, sanitized all decimal inputs, excluded Goal Vault transfers from Monthly Cap & No-Spend Streak penalties, fixed DST date drift, fixed `-₱0.00` formatting, updated Daily Burn & Cash Runway to use elapsed calendar days, and fixed Category Allocation donut rendering.
+- **Dark Cold Start, Keyboard Safety & Delete Guards:** Updated `themes.xml` to AMOLED dark (`#07080B`) to eliminate the white launch flash, added `adjustResize` + `imePadding()` across dialogs, added confirmation dialogs before deleting Goals or Quick Presets, fixed Privacy Masking in Settings/Deposits, smoothed Undo banner dismissal, and eliminated per-frame `SharedPreferences` reads and list copies.
 
 ---
 

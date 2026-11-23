@@ -17,6 +17,7 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -42,6 +43,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -72,9 +74,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -105,11 +108,18 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.BufferedReader
+import java.io.InputStreamReader
 import java.io.PrintWriter
 import java.io.StringWriter
+import java.net.HttpURLConnection
+import java.net.URL
 import java.net.URLEncoder
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -122,20 +132,25 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sin
+import kotlin.math.truncate
 
 // ============================================================================
 // FinVault Release & Developer Configuration
 // Update these constants when bumping versions or customizing contact links.
 // ============================================================================
 private const val APP_VERSION_MAJOR = 2
-private const val APP_VERSION_MINOR = 2
+private const val APP_VERSION_MINOR = 3
 private const val APP_VERSION_PATCH = 0
-private const val APP_VERSION_CODE = 4
+private const val APP_VERSION_CODE = 5
 private const val APP_VERSION_NAME = "$APP_VERSION_MAJOR.$APP_VERSION_MINOR.$APP_VERSION_PATCH"
 private const val APP_BUILD_TRACK = "Minor Release"
+private const val MAX_FINANCE_AMOUNT = 999_999_999_999.99
 
+private const val APP_BRAND_NAME = "FinVault Yuri"
 private const val DEVELOPER_NAME = "Yuri Rinkashime"
 private const val GITHUB_REPO_URL = "https://github.com/YuriRinkashime/FinVault"
+private const val GITHUB_RELEASES_URL = "https://github.com/YuriRinkashime/FinVault/releases"
+private const val GITHUB_RELEASES_API_URL = "https://api.github.com/repos/YuriRinkashime/FinVault/releases?per_page=15"
 private const val GITHUB_ISSUES_URL = "https://github.com/YuriRinkashime/FinVault/issues/new"
 private const val SUPPORT_EMAIL = "yuri.rinkashime@gmail.com"
 
@@ -175,10 +190,12 @@ private enum class Category(
     SHOPPING("Shopping", Color(0xFFC084FC)),
     TECH("Tech & Gaming", Color(0xFF22D3EE)),
     EDUCATION("School & Work", Color(0xFF34D399)),
+    GOAL_TRANSFER("Goal Vault", Color(0xFF38BDF8)),
     OTHER("General", Color(0xFF94A3B8)),
     ALLOWANCE("Allowance", Color(0xFF10B981), isIncomeCategory = true),
     SALARY("Earnings", Color(0xFF14B8A6), isIncomeCategory = true),
-    GIFT("Bonus & Gift", Color(0xFF4ADE80), isIncomeCategory = true)
+    GIFT("Bonus & Gift", Color(0xFF4ADE80), isIncomeCategory = true),
+    GOAL_WITHDRAW("Goal Refund", Color(0xFF2DD4BF), isIncomeCategory = true)
 }
 
 private enum class AccentTheme(
@@ -267,6 +284,34 @@ private data class QuickPreset(
 )
 
 @Immutable
+private data class QuarantineItem(
+    val id: Long,
+    val title: String,
+    val amount: Double,
+    val category: Category,
+    val targetGoalId: Long?,
+    val createdAt: Long,
+    val unlockAt: Long
+)
+
+@Immutable
+private data class AppUpdateInfo(
+    val tagName: String,
+    val releaseName: String,
+    val notes: String,
+    val htmlUrl: String,
+    val apkDownloadUrl: String?,
+    val isPreRelease: Boolean,
+    val publishedAt: String
+)
+
+private sealed class UpdateCheckResult {
+    data class UpdateAvailable(val info: AppUpdateInfo) : UpdateCheckResult()
+    data class UpToDate(val latestCheckedTag: String?) : UpdateCheckResult()
+    data class Error(val message: String) : UpdateCheckResult()
+}
+
+@Immutable
 private data class ReleaseNoteEntry(
     val version: String,
     val tier: String,
@@ -274,6 +319,16 @@ private data class ReleaseNoteEntry(
 )
 
 private val ReleaseHistory = listOf(
+    ReleaseNoteEntry(
+        version = "v2.3.0",
+        tier = "Minor Release",
+        summary = "Rebranded to FinVault Yuri for our first Stable Production Release: Dual-Vault Liquid & Goal Reserve architecture with direct Set Balance sync, Expense-to-Goal deposits & Goal withdrawals, GitHub Release Updater with secret Developer Settings pre-release channel, First-Time Setup Wizard (preserving v2.2.0 data), Impulse Cooling-Off Quarantine Vault, Time-Cost work-hours converter, Monthly Discipline Heatmap, and global Smooth Animations toggle."
+    ),
+    ReleaseNoteEntry(
+        version = "v2.2.1",
+        tier = "Patch Release",
+        summary = "Production stability hardening: monotonic unique IDs to prevent list key crashes, strict JSON backup validation with one-tap clipboard paste, exact double monthly cap storage, DST-safe trend/date math, realistic daily burn & cash runway, dark cold-start theme, keyboard-safe dialogs, goal/preset delete confirmation, and 120Hz state optimization."
+    ),
     ReleaseNoteEntry(
         version = "v2.2.0",
         tier = "Minor Release",
@@ -331,6 +386,7 @@ private object VaultDiagnostics {
         }
     }
 
+    @Synchronized
     fun log(context: Context, level: String, message: String) {
         try {
             val prefs = context.applicationContext.getSharedPreferences(PREFS_DIAG, Context.MODE_PRIVATE)
@@ -349,6 +405,7 @@ private object VaultDiagnostics {
         }
     }
 
+    @Synchronized
     fun readLogs(context: Context): List<String> {
         val prefs = context.applicationContext.getSharedPreferences(PREFS_DIAG, Context.MODE_PRIVATE)
         val raw = prefs.getString(KEY_LOGS, "[]") ?: "[]"
@@ -364,12 +421,14 @@ private object VaultDiagnostics {
         return list.reversed()
     }
 
+    @Synchronized
     fun readLastCrash(context: Context): String? {
         val prefs = context.applicationContext.getSharedPreferences(PREFS_DIAG, Context.MODE_PRIVATE)
         val trace = prefs.getString(KEY_LAST_CRASH, null)
         return if (trace.isNullOrBlank()) null else trace
     }
 
+    @Synchronized
     fun clearAll(context: Context) {
         context.applicationContext.getSharedPreferences(PREFS_DIAG, Context.MODE_PRIVATE)
             .edit()
@@ -388,7 +447,7 @@ private object VaultDiagnostics {
         hasMonthlyCap: Boolean
     ): String {
         val sb = StringBuilder()
-        sb.appendLine("=== FinVault Diagnostic Summary (Privacy-Safe) ===")
+        sb.appendLine("=== $APP_BRAND_NAME Diagnostic Summary (Privacy-Safe) ===")
         sb.appendLine("App Version: v$APP_VERSION_NAME (Build $APP_VERSION_CODE)")
         sb.appendLine("Android Version: ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
         sb.appendLine("Device: ${Build.MANUFACTURER} ${Build.MODEL}")
@@ -412,27 +471,290 @@ private object VaultDiagnostics {
     }
 }
 
+// ============================================================================
+// GitHub Release Update Scanner (Public API — Zero Personal Data Transmitted)
+// Ignores pre-releases unless enabled in Developer Settings.
+// ============================================================================
+private object VaultUpdater {
+    fun compareSemVer(remoteTag: String, localVersion: String): Int {
+        fun parseParts(raw: String): Pair<List<Int>, String> {
+            val cleaned = raw.trim().removePrefix("v").removePrefix("V")
+            val dashIndex = cleaned.indexOf('-')
+            val core = if (dashIndex >= 0) cleaned.substring(0, dashIndex) else cleaned
+            val suffix = if (dashIndex >= 0) cleaned.substring(dashIndex + 1).lowercase(Locale.US) else ""
+            val nums = core.split('.').map { it.filter(Char::isDigit).toIntOrNull() ?: 0 }
+            val padded = listOf(
+                nums.getOrElse(0) { 0 },
+                nums.getOrElse(1) { 0 },
+                nums.getOrElse(2) { 0 }
+            )
+            return Pair(padded, suffix)
+        }
+
+        val (rNums, rSuffix) = parseParts(remoteTag)
+        val (lNums, lSuffix) = parseParts(localVersion)
+        for (i in 0..2) {
+            if (rNums[i] != lNums[i]) return rNums[i].compareTo(lNums[i])
+        }
+        return when {
+            rSuffix.isEmpty() && lSuffix.isNotEmpty() -> 1
+            rSuffix.isNotEmpty() && lSuffix.isEmpty() -> -1
+            else -> rSuffix.compareTo(lSuffix)
+        }
+    }
+
+    suspend fun checkForUpdates(includePreReleases: Boolean): UpdateCheckResult = withContext(Dispatchers.IO) {
+        var connection: HttpURLConnection? = null
+        try {
+            val url = URL(GITHUB_RELEASES_API_URL)
+            connection = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 8000
+                readTimeout = 8000
+                setRequestProperty("Accept", "application/vnd.github+json")
+                setRequestProperty("User-Agent", "FinVault-Android/$APP_VERSION_NAME")
+            }
+            val statusCode = connection.responseCode
+            if (statusCode == 403) {
+                return@withContext UpdateCheckResult.Error("GitHub API rate limit reached. Try again later.")
+            }
+            if (statusCode !in 200..299) {
+                return@withContext UpdateCheckResult.Error("Unable to reach GitHub Releases (HTTP $statusCode).")
+            }
+
+            val body = BufferedReader(InputStreamReader(connection.inputStream)).use { reader ->
+                reader.readText()
+            }
+            val array = JSONArray(body)
+            val candidates = mutableListOf<AppUpdateInfo>()
+
+            for (i in 0 until array.length()) {
+                val obj = array.optJSONObject(i) ?: continue
+                if (obj.optBoolean("draft", false)) continue
+                val tag = obj.optString("tag_name", "").trim()
+                if (tag.isEmpty()) continue
+                val isPre = obj.optBoolean("prerelease", false) || tag.contains('-')
+                if (isPre && !includePreReleases) continue
+
+                var apkUrl: String? = null
+                val assets = obj.optJSONArray("assets")
+                if (assets != null) {
+                    for (a in 0 until assets.length()) {
+                        val asset = assets.optJSONObject(a) ?: continue
+                        val name = asset.optString("name", "")
+                        val dl = asset.optString("browser_download_url", "")
+                        if (name.endsWith(".apk", ignoreCase = true) && dl.isNotBlank()) {
+                            apkUrl = dl
+                            break
+                        }
+                    }
+                }
+
+                val name = obj.optString("name", "").trim().ifEmpty { tag }
+                val notes = obj.optString("body", "").trim()
+                val htmlUrl = obj.optString("html_url", GITHUB_RELEASES_URL).ifBlank { GITHUB_RELEASES_URL }
+                val published = obj.optString("published_at", "").take(10)
+
+                candidates.add(
+                    AppUpdateInfo(
+                        tagName = tag,
+                        releaseName = name,
+                        notes = notes,
+                        htmlUrl = htmlUrl,
+                        apkDownloadUrl = apkUrl,
+                        isPreRelease = isPre,
+                        publishedAt = published
+                    )
+                )
+            }
+
+            val latest = candidates.maxWithOrNull { a, b -> compareSemVer(a.tagName, b.tagName) }
+            if (latest != null && compareSemVer(latest.tagName, APP_VERSION_NAME) > 0) {
+                UpdateCheckResult.UpdateAvailable(latest)
+            } else {
+                UpdateCheckResult.UpToDate(latest?.tagName)
+            }
+        } catch (_: Exception) {
+            UpdateCheckResult.Error("Offline or unable to reach GitHub. Connect to the internet to check for updates.")
+        } finally {
+            connection?.disconnect()
+        }
+    }
+}
+
 private object VaultStorage {
     private const val PREFS_NAME = "finvault_storage_v2"
     private const val KEY_TRANSACTIONS = "transactions"
     private const val KEY_GOALS = "goals"
     private const val KEY_PRESETS = "quick_presets"
+    private const val KEY_QUARANTINE = "quarantine_items"
     private const val KEY_MONTHLY_BUDGET = "monthly_budget"
+    private const val KEY_MONTHLY_BUDGET_EXACT = "monthly_budget_exact"
+    private const val KEY_OPENING_BALANCE = "opening_balance_exact"
+    private const val KEY_HOURLY_RATE = "hourly_rate_exact"
+    private const val KEY_IMPULSE_RESISTED_TOTAL = "impulse_resisted_total"
+    private const val KEY_IMPULSE_RESISTED_COUNT = "impulse_resisted_count"
     private const val KEY_CURRENCY = "currency"
     private const val KEY_THEME = "accent_theme"
     private const val KEY_HAPTICS = "haptics_enabled"
     private const val KEY_HIDE_BALANCE = "hide_balance"
+    private const val KEY_ANIMATIONS = "animations_enabled"
+    private const val KEY_SETUP_DONE_V23 = "setup_completed_v23"
+    private const val KEY_DEV_SETTINGS = "dev_settings_unlocked"
+    private const val KEY_INCLUDE_PRERELEASES = "include_prereleases"
+    private const val KEY_AUTO_CHECK_UPDATES = "auto_check_updates"
 
     fun loadMonthlyBudget(context: Context): Double {
-        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getFloat(KEY_MONTHLY_BUDGET, 0f)
-            .toDouble()
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val exact = prefs.getString(KEY_MONTHLY_BUDGET_EXACT, null)?.toDoubleOrNull()
+        if (exact != null && exact.isFinite() && exact >= 0.0) {
+            return exact.coerceAtMost(MAX_FINANCE_AMOUNT)
+        }
+        val legacy = prefs.getFloat(KEY_MONTHLY_BUDGET, 0f).toDouble()
+        return if (legacy.isFinite() && legacy >= 0.0) legacy.coerceAtMost(MAX_FINANCE_AMOUNT) else 0.0
     }
 
     fun saveMonthlyBudget(context: Context, budget: Double) {
+        val safe = if (budget.isFinite() && budget >= 0.0) budget.coerceAtMost(MAX_FINANCE_AMOUNT) else 0.0
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
-            .putFloat(KEY_MONTHLY_BUDGET, budget.toFloat())
+            .putString(KEY_MONTHLY_BUDGET_EXACT, safe.toString())
+            .putFloat(KEY_MONTHLY_BUDGET, safe.toFloat())
+            .apply()
+    }
+
+    fun loadOpeningBalance(context: Context): Double {
+        val raw = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(KEY_OPENING_BALANCE, null)?.toDoubleOrNull()
+        return if (raw != null && raw.isFinite()) {
+            raw.coerceIn(-MAX_FINANCE_AMOUNT, MAX_FINANCE_AMOUNT)
+        } else {
+            0.0
+        }
+    }
+
+    fun saveOpeningBalance(context: Context, balance: Double) {
+        val safe = if (balance.isFinite()) balance.coerceIn(-MAX_FINANCE_AMOUNT, MAX_FINANCE_AMOUNT) else 0.0
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_OPENING_BALANCE, safe.toString())
+            .apply()
+    }
+
+    fun loadHourlyRate(context: Context): Double {
+        val raw = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(KEY_HOURLY_RATE, null)?.toDoubleOrNull()
+        return if (raw != null && raw.isFinite() && raw >= 0.0) {
+            raw.coerceAtMost(MAX_FINANCE_AMOUNT)
+        } else {
+            0.0
+        }
+    }
+
+    fun saveHourlyRate(context: Context, rate: Double) {
+        val safe = if (rate.isFinite() && rate >= 0.0) rate.coerceAtMost(MAX_FINANCE_AMOUNT) else 0.0
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_HOURLY_RATE, safe.toString())
+            .apply()
+    }
+
+    fun loadImpulseResistedTotal(context: Context): Double {
+        val raw = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(KEY_IMPULSE_RESISTED_TOTAL, null)?.toDoubleOrNull()
+        return if (raw != null && raw.isFinite() && raw >= 0.0) raw.coerceAtMost(MAX_FINANCE_AMOUNT) else 0.0
+    }
+
+    fun saveImpulseResistedTotal(context: Context, total: Double) {
+        val safe = if (total.isFinite() && total >= 0.0) total.coerceAtMost(MAX_FINANCE_AMOUNT) else 0.0
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_IMPULSE_RESISTED_TOTAL, safe.toString())
+            .apply()
+    }
+
+    fun loadImpulseResistedCount(context: Context): Int {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getInt(KEY_IMPULSE_RESISTED_COUNT, 0).coerceAtLeast(0)
+    }
+
+    fun saveImpulseResistedCount(context: Context, count: Int) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putInt(KEY_IMPULSE_RESISTED_COUNT, count.coerceAtLeast(0))
+            .apply()
+    }
+
+    fun loadAnimationsEnabled(context: Context): Boolean {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_ANIMATIONS, true)
+    }
+
+    fun saveAnimationsEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_ANIMATIONS, enabled)
+            .apply()
+    }
+
+    fun loadSetupCompleted(context: Context): Boolean {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_SETUP_DONE_V23, false)
+    }
+
+    fun saveSetupCompleted(context: Context, completed: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_SETUP_DONE_V23, completed)
+            .apply()
+    }
+
+    fun loadDevSettingsUnlocked(context: Context): Boolean {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_DEV_SETTINGS, false)
+    }
+
+    fun saveDevSettingsUnlocked(context: Context, unlocked: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_DEV_SETTINGS, unlocked)
+            .apply()
+    }
+
+    fun loadIncludePreReleases(context: Context): Boolean {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_INCLUDE_PRERELEASES, false)
+    }
+
+    fun saveIncludePreReleases(context: Context, include: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_INCLUDE_PRERELEASES, include)
+            .apply()
+    }
+
+    fun loadAutoCheckUpdates(context: Context): Boolean {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_AUTO_CHECK_UPDATES, true)
+    }
+
+    fun saveAutoCheckUpdates(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_AUTO_CHECK_UPDATES, enabled)
+            .apply()
+    }
+
+    fun loadQuarantine(context: Context): List<QuarantineItem> {
+        val raw = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(KEY_QUARANTINE, "[]") ?: "[]"
+        return parseQuarantineJson(raw)
+    }
+
+    fun saveQuarantine(context: Context, items: List<QuarantineItem>) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_QUARANTINE, serializeQuarantineJson(items).toString())
             .apply()
     }
 
@@ -527,39 +849,87 @@ private object VaultStorage {
 
     fun exportFullBackupJson(
         monthlyBudget: Double,
+        openingBalance: Double,
+        hourlyRate: Double,
+        impulseResistedTotal: Double,
+        impulseResistedCount: Int,
         currency: CurrencyOption,
         transactions: List<TransactionItem>,
         goals: List<SavingsGoal>,
-        presets: List<QuickPreset>
+        presets: List<QuickPreset>,
+        quarantine: List<QuarantineItem>
     ): String {
         val root = JSONObject()
-        root.put("app", "FinVault")
+        root.put("app", APP_BRAND_NAME)
         root.put("version", APP_VERSION_NAME)
         root.put("exportedAt", System.currentTimeMillis())
         root.put("monthlyBudget", monthlyBudget)
+        root.put("openingBalance", openingBalance)
+        root.put("hourlyRate", hourlyRate)
+        root.put("impulseResistedTotal", impulseResistedTotal)
+        root.put("impulseResistedCount", impulseResistedCount)
         root.put("currency", currency.code)
         root.put("transactions", serializeTransactionsJson(transactions))
         root.put("goals", serializeGoalsJson(goals))
         root.put("presets", serializePresetsJson(presets))
+        root.put("quarantine", serializeQuarantineJson(quarantine))
         return root.toString(2)
     }
 
     fun parseFullBackupJson(rawJson: String): BackupPayload? {
         return try {
-            val root = JSONObject(rawJson.trim())
-            val budget = root.optDouble("monthlyBudget", 0.0).coerceAtLeast(0.0)
+            val trimmed = rawJson.trim()
+            if (trimmed.isEmpty()) return null
+            val root = JSONObject(trimmed)
+            val appField = root.optString("app")
+            if (appField != "FinVault" && appField != APP_BRAND_NAME) return null
+            val txArray = root.optJSONArray("transactions") ?: return null
+            if (root.has("goals") && root.optJSONArray("goals") == null) return null
+            if (root.has("presets") && root.optJSONArray("presets") == null) return null
+            if (root.has("quarantine") && root.optJSONArray("quarantine") == null) return null
+
+            val rawBudget = root.optDouble("monthlyBudget", 0.0)
+            val budget = if (rawBudget.isFinite() && rawBudget >= 0.0) {
+                rawBudget.coerceAtMost(MAX_FINANCE_AMOUNT)
+            } else {
+                0.0
+            }
+            val rawOpening = root.optDouble("openingBalance", 0.0)
+            val openingBalance = if (rawOpening.isFinite()) {
+                rawOpening.coerceIn(-MAX_FINANCE_AMOUNT, MAX_FINANCE_AMOUNT)
+            } else {
+                0.0
+            }
+            val rawHourly = root.optDouble("hourlyRate", 0.0)
+            val hourlyRate = if (rawHourly.isFinite() && rawHourly >= 0.0) {
+                rawHourly.coerceAtMost(MAX_FINANCE_AMOUNT)
+            } else {
+                0.0
+            }
+            val rawResistedTotal = root.optDouble("impulseResistedTotal", 0.0)
+            val resistedTotal = if (rawResistedTotal.isFinite() && rawResistedTotal >= 0.0) {
+                rawResistedTotal.coerceAtMost(MAX_FINANCE_AMOUNT)
+            } else {
+                0.0
+            }
+            val resistedCount = root.optInt("impulseResistedCount", 0).coerceAtLeast(0)
             val currencyCode = root.optString("currency", CurrencyOption.PHP.code)
             val currency = CurrencyOption.entries.firstOrNull { it.code == currencyCode }
                 ?: CurrencyOption.PHP
-            val txArray = root.optJSONArray("transactions") ?: JSONArray()
             val goalArray = root.optJSONArray("goals") ?: JSONArray()
             val presetArray = root.optJSONArray("presets") ?: JSONArray()
+            val quarantineArray = root.optJSONArray("quarantine") ?: JSONArray()
             BackupPayload(
                 monthlyBudget = budget,
+                openingBalance = openingBalance,
+                hourlyRate = hourlyRate,
+                impulseResistedTotal = resistedTotal,
+                impulseResistedCount = resistedCount,
                 currency = currency,
                 transactions = parseTransactionsJson(txArray.toString()),
                 goals = parseGoalsJson(goalArray.toString()),
-                presets = parsePresetsJson(presetArray.toString())
+                presets = parsePresetsJson(presetArray.toString()),
+                quarantine = parseQuarantineJson(quarantineArray.toString())
             )
         } catch (_: Exception) {
             null
@@ -599,25 +969,49 @@ private object VaultStorage {
 
     private fun parseTransactionsJson(raw: String): List<TransactionItem> {
         val result = mutableListOf<TransactionItem>()
+        val seenIds = HashSet<Long>()
+        var nextFallbackId = System.currentTimeMillis()
         try {
             val array = JSONArray(raw)
             for (i in 0 until array.length()) {
-                val obj = array.getJSONObject(i)
+                val obj = array.optJSONObject(i) ?: continue
                 val type = TransactionType.entries.firstOrNull {
                     it.name == obj.optString("type")
                 } ?: TransactionType.EXPENSE
-                val category = Category.entries.firstOrNull {
+                val rawCategory = Category.entries.firstOrNull {
                     it.name == obj.optString("category")
-                } ?: Category.OTHER
+                }
+                val category = if (rawCategory != null && rawCategory.isIncomeCategory == (type == TransactionType.INCOME)) {
+                    rawCategory
+                } else if (type == TransactionType.INCOME) {
+                    Category.ALLOWANCE
+                } else {
+                    Category.OTHER
+                }
+                val rawAmount = obj.optDouble("amount", 0.0)
+                if (!rawAmount.isFinite() || rawAmount <= 0.0) continue
+                val safeAmount = rawAmount.coerceAtMost(MAX_FINANCE_AMOUNT)
+                var id = obj.optLong("id", 0L)
+                if (id <= 0L || !seenIds.add(id)) {
+                    while (!seenIds.add(nextFallbackId)) {
+                        nextFallbackId += 1L
+                    }
+                    id = nextFallbackId
+                    nextFallbackId += 1L
+                }
+                val timestamp = obj.optLong("timestamp", System.currentTimeMillis()).let {
+                    if (it > 0L) it else System.currentTimeMillis()
+                }
+                val title = obj.optString("title", "").trim().ifEmpty { "Untitled Entry" }
                 result.add(
                     TransactionItem(
-                        id = obj.optLong("id", System.currentTimeMillis() + i),
-                        title = obj.optString("title", "Untitled Entry"),
-                        amount = obj.optDouble("amount", 0.0),
+                        id = id,
+                        title = title,
+                        amount = safeAmount,
                         type = type,
                         category = category,
-                        timestamp = obj.optLong("timestamp", System.currentTimeMillis()),
-                        note = obj.optString("note", "")
+                        timestamp = timestamp,
+                        note = obj.optString("note", "").trim()
                     )
                 )
             }
@@ -643,17 +1037,38 @@ private object VaultStorage {
 
     private fun parseGoalsJson(raw: String): List<SavingsGoal> {
         val result = mutableListOf<SavingsGoal>()
+        val seenIds = HashSet<Long>()
+        var nextFallbackId = System.currentTimeMillis()
         try {
             val array = JSONArray(raw)
             for (i in 0 until array.length()) {
-                val obj = array.getJSONObject(i)
+                val obj = array.optJSONObject(i) ?: continue
+                val rawTarget = obj.optDouble("targetAmount", 0.0)
+                if (!rawTarget.isFinite() || rawTarget <= 0.0) continue
+                val rawSaved = obj.optDouble("savedAmount", 0.0)
+                val safeSaved = if (rawSaved.isFinite() && rawSaved >= 0.0) {
+                    rawSaved.coerceAtMost(MAX_FINANCE_AMOUNT)
+                } else {
+                    0.0
+                }
+                var id = obj.optLong("id", 0L)
+                if (id <= 0L || !seenIds.add(id)) {
+                    while (!seenIds.add(nextFallbackId)) {
+                        nextFallbackId += 1L
+                    }
+                    id = nextFallbackId
+                    nextFallbackId += 1L
+                }
+                val title = obj.optString("title", "").trim().ifEmpty { "Savings Target" }
+                val colorHex = obj.optLong("colorHex", 0xFF38BDF8L)
+                val safeColorHex = if ((colorHex and 0xFF000000L) == 0L) 0xFF38BDF8L else colorHex
                 result.add(
                     SavingsGoal(
-                        id = obj.optLong("id", System.currentTimeMillis() + i),
-                        title = obj.optString("title", "Savings Target"),
-                        targetAmount = obj.optDouble("targetAmount", 1000.0),
-                        savedAmount = obj.optDouble("savedAmount", 0.0),
-                        colorHex = obj.optLong("colorHex", 0xFF38BDF8L)
+                        id = id,
+                        title = title,
+                        targetAmount = rawTarget.coerceAtMost(MAX_FINANCE_AMOUNT),
+                        savedAmount = safeSaved,
+                        colorHex = safeColorHex
                     )
                 )
             }
@@ -679,21 +1094,41 @@ private object VaultStorage {
 
     private fun parsePresetsJson(raw: String): List<QuickPreset> {
         val result = mutableListOf<QuickPreset>()
+        val seenIds = HashSet<Long>()
+        var nextFallbackId = System.currentTimeMillis()
         try {
             val array = JSONArray(raw)
             for (i in 0 until array.length()) {
-                val obj = array.getJSONObject(i)
+                val obj = array.optJSONObject(i) ?: continue
                 val type = TransactionType.entries.firstOrNull {
                     it.name == obj.optString("type")
                 } ?: TransactionType.EXPENSE
-                val category = Category.entries.firstOrNull {
+                val rawCategory = Category.entries.firstOrNull {
                     it.name == obj.optString("category")
-                } ?: Category.OTHER
+                }
+                val category = if (rawCategory != null && rawCategory.isIncomeCategory == (type == TransactionType.INCOME)) {
+                    rawCategory
+                } else if (type == TransactionType.INCOME) {
+                    Category.ALLOWANCE
+                } else {
+                    Category.OTHER
+                }
+                val rawAmount = obj.optDouble("amount", 0.0)
+                if (!rawAmount.isFinite() || rawAmount <= 0.0) continue
+                var id = obj.optLong("id", 0L)
+                if (id <= 0L || !seenIds.add(id)) {
+                    while (!seenIds.add(nextFallbackId)) {
+                        nextFallbackId += 1L
+                    }
+                    id = nextFallbackId
+                    nextFallbackId += 1L
+                }
+                val title = obj.optString("title", "").trim().ifEmpty { "Quick Preset" }
                 result.add(
                     QuickPreset(
-                        id = obj.optLong("id", System.currentTimeMillis() + i),
-                        title = obj.optString("title", "Quick Preset"),
-                        amount = obj.optDouble("amount", 0.0),
+                        id = id,
+                        title = title,
+                        amount = rawAmount.coerceAtMost(MAX_FINANCE_AMOUNT),
                         type = type,
                         category = category
                     )
@@ -704,15 +1139,165 @@ private object VaultStorage {
         }
         return result
     }
+
+    private fun serializeQuarantineJson(items: List<QuarantineItem>): JSONArray {
+        val array = JSONArray()
+        items.forEach { item ->
+            val obj = JSONObject()
+            obj.put("id", item.id)
+            obj.put("title", item.title)
+            obj.put("amount", item.amount)
+            obj.put("category", item.category.name)
+            if (item.targetGoalId != null) obj.put("targetGoalId", item.targetGoalId)
+            obj.put("createdAt", item.createdAt)
+            obj.put("unlockAt", item.unlockAt)
+            array.put(obj)
+        }
+        return array
+    }
+
+    private fun parseQuarantineJson(raw: String): List<QuarantineItem> {
+        val result = mutableListOf<QuarantineItem>()
+        val seenIds = HashSet<Long>()
+        var nextFallbackId = System.currentTimeMillis()
+        try {
+            val array = JSONArray(raw)
+            for (i in 0 until array.length()) {
+                val obj = array.optJSONObject(i) ?: continue
+                val rawAmount = obj.optDouble("amount", 0.0)
+                if (!rawAmount.isFinite() || rawAmount <= 0.0) continue
+                val category = Category.entries.firstOrNull {
+                    !it.isIncomeCategory && it.name == obj.optString("category")
+                } ?: Category.SHOPPING
+                var id = obj.optLong("id", 0L)
+                if (id <= 0L || !seenIds.add(id)) {
+                    while (!seenIds.add(nextFallbackId)) {
+                        nextFallbackId += 1L
+                    }
+                    id = nextFallbackId
+                    nextFallbackId += 1L
+                }
+                val title = obj.optString("title", "").trim().ifEmpty { "Planned Purchase" }
+                val targetGoalId = if (obj.has("targetGoalId") && !obj.isNull("targetGoalId")) {
+                    obj.optLong("targetGoalId", -1L).takeIf { it > 0L }
+                } else {
+                    null
+                }
+                val createdAt = obj.optLong("createdAt", System.currentTimeMillis()).let {
+                    if (it > 0L) it else System.currentTimeMillis()
+                }
+                val unlockAt = obj.optLong("unlockAt", createdAt + 72L * 60L * 60L * 1000L)
+                result.add(
+                    QuarantineItem(
+                        id = id,
+                        title = title,
+                        amount = rawAmount.coerceAtMost(MAX_FINANCE_AMOUNT),
+                        category = category,
+                        targetGoalId = targetGoalId,
+                        createdAt = createdAt,
+                        unlockAt = unlockAt
+                    )
+                )
+            }
+        } catch (_: Exception) {
+            return emptyList()
+        }
+        return result.sortedBy { it.unlockAt }
+    }
 }
 
 private data class BackupPayload(
     val monthlyBudget: Double,
+    val openingBalance: Double,
+    val hourlyRate: Double,
+    val impulseResistedTotal: Double,
+    val impulseResistedCount: Int,
     val currency: CurrencyOption,
     val transactions: List<TransactionItem>,
     val goals: List<SavingsGoal>,
-    val presets: List<QuickPreset>
+    val presets: List<QuickPreset>,
+    val quarantine: List<QuarantineItem>
 )
+
+private fun formatWorkHours(amount: Double, hourlyRate: Double): String? {
+    if (!amount.isFinite() || !hourlyRate.isFinite() || amount <= 0.0 || hourlyRate <= 0.0) return null
+    val hours = amount / hourlyRate
+    return when {
+        hours < 1.0 -> "${max(1, (hours * 60.0).roundToInt())} Mins"
+        hours < 100.0 -> "${String.format(Locale.US, "%.1f", hours)} Hrs"
+        else -> "${hours.roundToInt()} Hrs"
+    }
+}
+
+private fun formatRemainingCountdown(unlockAt: Long, nowMillis: Long): String {
+    val diff = unlockAt - nowMillis
+    if (diff <= 0L) return "Ready to Decide"
+    val totalMinutes = diff / (60L * 1000L)
+    val days = totalMinutes / (24L * 60L)
+    val hours = (totalMinutes % (24L * 60L)) / 60L
+    val mins = totalMinutes % 60L
+    return when {
+        days > 0L -> "${days}d ${hours}h Left"
+        hours > 0L -> "${hours}h ${mins}m Left"
+        mins > 0L -> "${mins}m Left"
+        else -> "< 1m Left"
+    }
+}
+
+private fun nextUniqueId(existingIds: Collection<Long>): Long {
+    val now = System.currentTimeMillis()
+    val maxExisting = existingIds.maxOrNull() ?: 0L
+    return max(now, maxExisting + 1L)
+}
+
+private fun sanitizeDecimalInput(input: String): String {
+    val sb = StringBuilder()
+    var hasDot = false
+    var integerDigits = 0
+    var fractionalDigits = 0
+    for (ch in input) {
+        if (ch.isDigit()) {
+            if (!hasDot) {
+                if (integerDigits < 12) {
+                    sb.append(ch)
+                    integerDigits++
+                }
+            } else if (fractionalDigits < 2) {
+                sb.append(ch)
+                fractionalDigits++
+            }
+        } else if (ch == '.' && !hasDot) {
+            if (sb.isEmpty()) {
+                sb.append('0')
+                integerDigits = 1
+            }
+            sb.append('.')
+            hasDot = true
+        }
+    }
+    return sb.toString()
+}
+
+private fun formatEditableAmount(amount: Double): String {
+    if (!amount.isFinite() || amount <= 0.0) return ""
+    val formatted = String.format(Locale.US, "%.2f", amount)
+    return when {
+        formatted.endsWith(".00") -> formatted.dropLast(3)
+        formatted.endsWith("0") -> formatted.dropLast(1)
+        else -> formatted
+    }
+}
+
+private fun hasFractionalCents(amount: Double): Boolean {
+    if (!amount.isFinite()) return false
+    return abs(amount - truncate(amount)) >= 0.005
+}
+
+private fun formatCompactPercent(ratio: Double): String {
+    if (!ratio.isFinite() || ratio <= 0.0) return "0%"
+    val pct = ratio * 100.0
+    return if (pct > 9999.0) "9999%+" else "${pct.roundToInt()}%"
+}
 
 private fun formatMoney(
     amount: Double,
@@ -721,12 +1306,58 @@ private fun formatMoney(
     masked: Boolean = false
 ): String {
     if (masked) return "$symbol••••••"
+    val safe = if (amount.isFinite()) amount else 0.0
+    val zeroThreshold = if (showDecimals) 0.005 else 0.5
+    val normalized = if (abs(safe) < zeroThreshold) 0.0 else safe
     val formatted = if (showDecimals) {
-        String.format(Locale.US, "%,.2f", abs(amount))
+        String.format(Locale.US, "%,.2f", abs(normalized))
     } else {
-        String.format(Locale.US, "%,.0f", abs(amount))
+        String.format(Locale.US, "%,.0f", abs(normalized))
     }
-    return if (amount < 0) "-$symbol$formatted" else "$symbol$formatted"
+    return if (normalized < 0.0) "-$symbol$formatted" else "$symbol$formatted"
+}
+
+private fun calendarDaysAgo(daysAgo: Int): Calendar {
+    return Calendar.getInstance().apply {
+        add(Calendar.DAY_OF_YEAR, -daysAgo)
+    }
+}
+
+private fun startOfDayMillis(timestamp: Long): Long {
+    val cal = Calendar.getInstance().apply {
+        timeInMillis = timestamp
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }
+    return cal.timeInMillis
+}
+
+private fun calendarDaysSpanInclusive(earliestTimestamp: Long): Int {
+    val startDay = startOfDayMillis(earliestTimestamp)
+    val todayStart = startOfDayMillis(System.currentTimeMillis())
+    if (startDay >= todayStart) return 1
+    val diffDays = ((todayStart - startDay) + 12L * 60L * 60L * 1000L) / (24L * 60L * 60L * 1000L)
+    return max(1, diffDays.toInt() + 1)
+}
+
+private fun computeAverageDailySpend(expenses: List<TransactionItem>): Double {
+    if (expenses.isEmpty()) return 0.0
+    val total = expenses.sumOf { it.amount }
+    val earliest = expenses.minOf { it.timestamp }
+    val spanDays = calendarDaysSpanInclusive(earliest)
+    return total / spanDays
+}
+
+private fun computeRecentDailyBurn(expenses: List<TransactionItem>): Double {
+    if (expenses.isEmpty()) return 0.0
+    val cutoff = startOfDayMillis(calendarDaysAgo(29).timeInMillis)
+    val recent = expenses.filter { it.timestamp >= cutoff }
+    if (recent.isEmpty()) return computeAverageDailySpend(expenses)
+    val earliest = recent.minOf { it.timestamp }
+    val spanDays = min(30, calendarDaysSpanInclusive(earliest))
+    return recent.sumOf { it.amount } / max(1, spanDays)
 }
 
 private fun formatDateLabel(timestamp: Long): String {
@@ -762,7 +1393,9 @@ private fun isTimestampInCurrentMonth(timestamp: Long): Boolean {
 }
 
 private fun computeNoSpendStreakDays(transactions: List<TransactionItem>): Int {
-    val expenses = transactions.filter { it.type == TransactionType.EXPENSE }
+    val expenses = transactions.filter {
+        it.type == TransactionType.EXPENSE && it.category != Category.GOAL_TRANSFER
+    }
     if (expenses.isEmpty()) return 0
     val keyFmt = SimpleDateFormat("yyyy-MM-dd", Locale.US)
     val expenseDays = expenses.map { keyFmt.format(Date(it.timestamp)) }.toSet()
@@ -815,19 +1448,39 @@ private fun sharePlainTextReport(context: Context, subject: String, body: String
 private fun FinVaultApp() {
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
+    val scope = rememberCoroutineScope()
 
-    var selectedTab by remember { mutableIntStateOf(0) }
+    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var activeTheme by remember { mutableStateOf(VaultStorage.loadTheme(context)) }
     var currency by remember { mutableStateOf(VaultStorage.loadCurrency(context)) }
     var monthlyBudget by remember { mutableDoubleStateOf(VaultStorage.loadMonthlyBudget(context)) }
+    var openingBalance by remember { mutableDoubleStateOf(VaultStorage.loadOpeningBalance(context)) }
+    var hourlyRate by remember { mutableDoubleStateOf(VaultStorage.loadHourlyRate(context)) }
+    var impulseResistedTotal by remember { mutableDoubleStateOf(VaultStorage.loadImpulseResistedTotal(context)) }
+    var impulseResistedCount by remember { mutableIntStateOf(VaultStorage.loadImpulseResistedCount(context)) }
     var hapticsEnabled by remember { mutableStateOf(VaultStorage.loadHaptics(context)) }
     var hideBalance by remember { mutableStateOf(VaultStorage.loadHideBalance(context)) }
+    var animationsEnabled by remember { mutableStateOf(VaultStorage.loadAnimationsEnabled(context)) }
+    var setupCompleted by remember { mutableStateOf(VaultStorage.loadSetupCompleted(context)) }
+    var devSettingsUnlocked by remember { mutableStateOf(VaultStorage.loadDevSettingsUnlocked(context)) }
+    var includePreReleases by remember { mutableStateOf(VaultStorage.loadIncludePreReleases(context)) }
+    var autoCheckUpdates by remember { mutableStateOf(VaultStorage.loadAutoCheckUpdates(context)) }
 
-    val transactions = remember { mutableStateListOf<TransactionItem>() }
-    val goals = remember { mutableStateListOf<SavingsGoal>() }
-    val presets = remember { mutableStateListOf<QuickPreset>() }
+    var transactions by remember { mutableStateOf(VaultStorage.loadTransactions(context)) }
+    var goals by remember { mutableStateOf(VaultStorage.loadGoals(context)) }
+    var presets by remember { mutableStateOf(VaultStorage.loadPresets(context)) }
+    var quarantineItems by remember { mutableStateOf(VaultStorage.loadQuarantine(context)) }
+    var diagnosticsVersion by remember { mutableIntStateOf(0) }
 
-    var undoDeletedItem by remember { mutableStateOf<TransactionItem?>(null) }
+    var isCheckingUpdates by remember { mutableStateOf(false) }
+    var availableUpdate by remember { mutableStateOf<AppUpdateInfo?>(null) }
+    var dismissedUpdateBanner by remember { mutableStateOf(false) }
+    var updateStatusText by remember { mutableStateOf("Tap to Scan GitHub Releases") }
+    var devTapCount by remember { mutableIntStateOf(0) }
+
+    var undoBannerItem by remember { mutableStateOf<TransactionItem?>(null) }
+    var showUndoBanner by remember { mutableStateOf(false) }
+    var undoToken by remember { mutableIntStateOf(0) }
 
     var showAddTransactionDialog by remember { mutableStateOf(false) }
     var editingTransaction by remember { mutableStateOf<TransactionItem?>(null) }
@@ -835,7 +1488,12 @@ private fun FinVaultApp() {
     var showGoalEditorDialog by remember { mutableStateOf(false) }
     var editingGoal by remember { mutableStateOf<SavingsGoal?>(null) }
     var activeDepositGoal by remember { mutableStateOf<SavingsGoal?>(null) }
+    var activeWithdrawGoal by remember { mutableStateOf<SavingsGoal?>(null) }
+    var pendingDeleteGoal by remember { mutableStateOf<SavingsGoal?>(null) }
+    var pendingDeletePreset by remember { mutableStateOf<QuickPreset?>(null) }
     var showEditBudgetDialog by remember { mutableStateOf(false) }
+    var showSetBalanceDialog by remember { mutableStateOf(false) }
+    var showHourlyRateDialog by remember { mutableStateOf(false) }
     var showSimulatorDialog by remember { mutableStateOf(false) }
     var showAddPresetDialog by remember { mutableStateOf(false) }
     var showImportBackupDialog by remember { mutableStateOf(false) }
@@ -843,41 +1501,112 @@ private fun FinVaultApp() {
     var showCreditsDialog by remember { mutableStateOf(false) }
     var showSupportDialog by remember { mutableStateOf(false) }
     var showLogsViewerDialog by remember { mutableStateOf(false) }
+    var showUpdateDialog by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
-        val loadedTx = VaultStorage.loadTransactions(context)
-        val loadedGoals = VaultStorage.loadGoals(context)
-        val loadedPresets = VaultStorage.loadPresets(context)
-        transactions.addAll(loadedTx)
-        goals.addAll(loadedGoals)
-        presets.addAll(loadedPresets)
-        VaultDiagnostics.log(
-            context,
-            "STORAGE",
-            "Loaded ${loadedTx.size} entries, ${loadedGoals.size} goals, ${loadedPresets.size} presets"
-        )
+    fun logDiag(level: String, message: String) {
+        VaultDiagnostics.log(context, level, message)
+        diagnosticsVersion += 1
     }
 
-    LaunchedEffect(undoDeletedItem) {
-        if (undoDeletedItem != null) {
-            delay(5000L)
-            undoDeletedItem = null
+    fun currentLiquidBalance(): Double {
+        val inc = transactions.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }
+        val exp = transactions.filter { it.type == TransactionType.EXPENSE }.sumOf { it.amount }
+        return openingBalance + inc - exp
+    }
+
+    fun setDesiredLiquidBalance(desiredBalance: Double) {
+        val inc = transactions.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }
+        val exp = transactions.filter { it.type == TransactionType.EXPENSE }.sumOf { it.amount }
+        val ledgerDelta = inc - exp
+        val newOpening = (desiredBalance - ledgerDelta).coerceIn(-MAX_FINANCE_AMOUNT, MAX_FINANCE_AMOUNT)
+        openingBalance = newOpening
+        VaultStorage.saveOpeningBalance(context, newOpening)
+        logDiag("VAULT", "Synced liquid vault balance")
+    }
+
+    fun runUpdateCheck(manual: Boolean) {
+        if (isCheckingUpdates) return
+        val allowPre = devSettingsUnlocked && includePreReleases
+        scope.launch {
+            isCheckingUpdates = true
+            updateStatusText = if (allowPre) "Scanning Releases (Pre-Releases Enabled)..." else "Scanning Stable Releases..."
+            val result = VaultUpdater.checkForUpdates(includePreReleases = allowPre)
+            isCheckingUpdates = false
+            when (result) {
+                is UpdateCheckResult.UpdateAvailable -> {
+                    availableUpdate = result.info
+                    dismissedUpdateBanner = false
+                    val tagLabel = if (result.info.isPreRelease) "${result.info.tagName} (Pre-Release)" else result.info.tagName
+                    updateStatusText = "Update Available: $tagLabel"
+                    logDiag("UPDATE", "Found update ${result.info.tagName} (pre=${result.info.isPreRelease})")
+                    if (manual) showUpdateDialog = true
+                }
+                is UpdateCheckResult.UpToDate -> {
+                    availableUpdate = null
+                    updateStatusText = "Up to Date (v$APP_VERSION_NAME)"
+                    logDiag("UPDATE", "Up to date on v$APP_VERSION_NAME")
+                    if (manual) {
+                        Toast.makeText(context, "$APP_BRAND_NAME Is Up to Date (v$APP_VERSION_NAME)", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                is UpdateCheckResult.Error -> {
+                    updateStatusText = result.message
+                    logDiag("UPDATE", "Check skipped or failed")
+                    if (manual) {
+                        Toast.makeText(context, result.message, Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
         }
     }
 
-    fun persistTransactions() {
-        val sorted = transactions.sortedByDescending { it.timestamp }
-        transactions.clear()
-        transactions.addAll(sorted)
+    LaunchedEffect(Unit) {
+        logDiag(
+            "STORAGE",
+            "Loaded ${transactions.size} entries, ${goals.size} goals, ${presets.size} presets, ${quarantineItems.size} quarantined"
+        )
+    }
+
+    LaunchedEffect(setupCompleted, autoCheckUpdates, devSettingsUnlocked, includePreReleases) {
+        if (setupCompleted && autoCheckUpdates) {
+            runUpdateCheck(manual = false)
+        }
+    }
+
+    LaunchedEffect(undoToken) {
+        if (showUndoBanner && undoToken > 0) {
+            delay(5000L)
+            showUndoBanner = false
+        }
+    }
+
+    fun updateTransactions(updated: List<TransactionItem>) {
+        val sorted = updated.sortedByDescending { it.timestamp }
+        transactions = sorted
         VaultStorage.saveTransactions(context, sorted)
     }
 
-    fun persistGoals() {
-        VaultStorage.saveGoals(context, goals.toList())
+    fun updateGoals(updated: List<SavingsGoal>) {
+        goals = updated
+        VaultStorage.saveGoals(context, updated)
     }
 
-    fun persistPresets() {
-        VaultStorage.savePresets(context, presets.toList())
+    fun updatePresets(updated: List<QuickPreset>) {
+        presets = updated
+        VaultStorage.savePresets(context, updated)
+    }
+
+    fun updateQuarantine(updated: List<QuarantineItem>) {
+        val sorted = updated.sortedBy { it.unlockAt }
+        quarantineItems = sorted
+        VaultStorage.saveQuarantine(context, sorted)
+    }
+
+    fun recordImpulseResisted(amount: Double) {
+        impulseResistedTotal = (impulseResistedTotal + amount).coerceAtMost(MAX_FINANCE_AMOUNT)
+        impulseResistedCount += 1
+        VaultStorage.saveImpulseResistedTotal(context, impulseResistedTotal)
+        VaultStorage.saveImpulseResistedCount(context, impulseResistedCount)
     }
 
     fun triggerHaptic(strong: Boolean = false) {
@@ -888,20 +1617,48 @@ private fun FinVaultApp() {
         }
     }
 
+    fun handleSecretVersionTap() {
+        if (devSettingsUnlocked) {
+            Toast.makeText(context, "Developer Settings Already Unlocked", Toast.LENGTH_SHORT).show()
+            return
+        }
+        devTapCount += 1
+        val remaining = 7 - devTapCount
+        if (remaining <= 0) {
+            devTapCount = 0
+            devSettingsUnlocked = true
+            VaultStorage.saveDevSettingsUnlocked(context, true)
+            triggerHaptic(strong = true)
+            logDiag("DEV", "Developer Settings unlocked")
+            Toast.makeText(context, "Developer Settings Unlocked in Settings Tab", Toast.LENGTH_SHORT).show()
+        } else if (remaining <= 4) {
+            triggerHaptic()
+            Toast.makeText(
+                context,
+                "$remaining More ${if (remaining == 1) "Tap" else "Taps"} to Unlock Developer Settings",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
     fun copyToClipboard(label: String, text: String, toastMessage: String) {
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(ClipData.newPlainText(label, text))
         Toast.makeText(context, toastMessage, Toast.LENGTH_SHORT).show()
     }
 
+    val hasCrashReport = remember(diagnosticsVersion) {
+        VaultDiagnostics.readLastCrash(context) != null
+    }
+
     val animatedPrimary by animateColorAsState(
         targetValue = activeTheme.primary,
-        animationSpec = tween(300, easing = FastOutSlowInEasing),
+        animationSpec = if (animationsEnabled) tween(300, easing = FastOutSlowInEasing) else snap(),
         label = "primaryColor"
     )
     val animatedSecondary by animateColorAsState(
         targetValue = activeTheme.secondary,
-        animationSpec = tween(300, easing = FastOutSlowInEasing),
+        animationSpec = if (animationsEnabled) tween(300, easing = FastOutSlowInEasing) else snap(),
         label = "secondaryColor"
     )
 
@@ -953,6 +1710,60 @@ private fun FinVaultApp() {
         colorScheme = appColors,
         typography = appTypography
     ) {
+        if (!setupCompleted) {
+            val existingRecords = transactions.size + goals.size + presets.size
+            val isUpgrading = existingRecords > 0 || monthlyBudget > 0.0 || openingBalance != 0.0
+            FirstTimeSetupScreen(
+                isUpgrading = isUpgrading,
+                existingRecordCount = existingRecords,
+                initialCurrency = currency,
+                initialTheme = activeTheme,
+                initialLiquidBalance = currentLiquidBalance(),
+                initialMonthlyBudget = monthlyBudget,
+                initialHourlyRate = hourlyRate,
+                initialAnimationsEnabled = animationsEnabled,
+                initialHapticsEnabled = hapticsEnabled,
+                initialHideBalance = hideBalance,
+                initialAutoCheckUpdates = autoCheckUpdates,
+                primary = animatedPrimary,
+                secondary = animatedSecondary,
+                onHaptic = { triggerHaptic() },
+                onPreviewTheme = { preview ->
+                    activeTheme = preview
+                    VaultStorage.saveTheme(context, preview)
+                },
+                onComplete = { chosenCurrency, chosenTheme, desiredBalance, chosenCap, chosenHourly, chosenAnim, chosenHaptics, chosenPrivacy, chosenAutoUpdates ->
+                    triggerHaptic(strong = true)
+                    currency = chosenCurrency
+                    activeTheme = chosenTheme
+                    monthlyBudget = chosenCap
+                    hourlyRate = chosenHourly
+                    animationsEnabled = chosenAnim
+                    hapticsEnabled = chosenHaptics
+                    hideBalance = chosenPrivacy
+                    autoCheckUpdates = chosenAutoUpdates
+
+                    VaultStorage.saveCurrency(context, chosenCurrency)
+                    VaultStorage.saveTheme(context, chosenTheme)
+                    VaultStorage.saveMonthlyBudget(context, chosenCap)
+                    VaultStorage.saveHourlyRate(context, chosenHourly)
+                    VaultStorage.saveAnimationsEnabled(context, chosenAnim)
+                    VaultStorage.saveHaptics(context, chosenHaptics)
+                    VaultStorage.saveHideBalance(context, chosenPrivacy)
+                    VaultStorage.saveAutoCheckUpdates(context, chosenAutoUpdates)
+
+                    if (desiredBalance != null) {
+                        setDesiredLiquidBalance(desiredBalance)
+                    }
+
+                    setupCompleted = true
+                    VaultStorage.saveSetupCompleted(context, true)
+                    logDiag("SETUP", "Completed v$APP_VERSION_NAME setup (upgrading=$isUpgrading)")
+                }
+            )
+        } else {
+        val liveLiquidBalance = currentLiquidBalance()
+
         Scaffold(
             containerColor = Color(0xFF07080B),
             bottomBar = {
@@ -972,26 +1783,48 @@ private fun FinVaultApp() {
                     .background(Color(0xFF07080B))
                     .statusBarsPadding()
                     .padding(bottom = innerPadding.calculateBottomPadding())
+                    .imePadding()
             ) {
                 AnimatedContent(
                     targetState = selectedTab,
                     transitionSpec = {
-                        fadeIn(tween(180)) togetherWith fadeOut(tween(120))
+                        if (animationsEnabled) {
+                            fadeIn(tween(180)) togetherWith fadeOut(tween(120))
+                        } else {
+                            fadeIn(snap()) togetherWith fadeOut(snap())
+                        }
                     },
                     modifier = Modifier.fillMaxSize(),
                     label = "tabContent"
                 ) { tab ->
                     when (tab) {
                         0 -> VaultOverviewScreen(
-                            transactions = transactions.toList(),
-                            goals = goals.toList(),
-                            presets = presets.toList(),
+                            transactions = transactions,
+                            goals = goals,
+                            presets = presets,
+                            quarantineItems = quarantineItems,
                             monthlyBudget = monthlyBudget,
+                            openingBalance = openingBalance,
+                            hourlyRate = hourlyRate,
                             currency = currency,
                             theme = activeTheme,
                             primary = animatedPrimary,
                             secondary = animatedSecondary,
                             hideBalance = hideBalance,
+                            animationsEnabled = animationsEnabled,
+                            availableUpdate = if (dismissedUpdateBanner) null else availableUpdate,
+                            onOpenUpdateDialog = {
+                                triggerHaptic()
+                                showUpdateDialog = true
+                            },
+                            onDismissUpdateBanner = {
+                                triggerHaptic()
+                                dismissedUpdateBanner = true
+                            },
+                            onSetBalance = {
+                                triggerHaptic()
+                                showSetBalanceDialog = true
+                            },
                             onTogglePrivacy = {
                                 triggerHaptic()
                                 hideBalance = !hideBalance
@@ -1029,7 +1862,7 @@ private fun FinVaultApp() {
                             onTriggerPreset = { preset ->
                                 triggerHaptic(strong = true)
                                 val entry = TransactionItem(
-                                    id = System.currentTimeMillis(),
+                                    id = nextUniqueId(transactions.map { it.id }),
                                     title = preset.title,
                                     amount = preset.amount,
                                     type = preset.type,
@@ -1037,9 +1870,8 @@ private fun FinVaultApp() {
                                     timestamp = System.currentTimeMillis(),
                                     note = "Logged via Quick Preset"
                                 )
-                                transactions.add(0, entry)
-                                persistTransactions()
-                                VaultDiagnostics.log(context, "ACTION", "Logged entry via Quick Preset")
+                                updateTransactions(listOf(entry) + transactions)
+                                logDiag("ACTION", "Logged entry via Quick Preset")
                                 Toast.makeText(
                                     context,
                                     "Recorded: ${preset.title}",
@@ -1047,9 +1879,8 @@ private fun FinVaultApp() {
                                 ).show()
                             },
                             onDeletePreset = { preset ->
-                                triggerHaptic(strong = true)
-                                presets.removeAll { it.id == preset.id }
-                                persistPresets()
+                                triggerHaptic()
+                                pendingDeletePreset = preset
                             },
                             onEditTransaction = { item ->
                                 triggerHaptic()
@@ -1059,31 +1890,100 @@ private fun FinVaultApp() {
                             },
                             onDeleteTransaction = { item ->
                                 triggerHaptic(strong = true)
-                                undoDeletedItem = item
-                                transactions.removeAll { it.id == item.id }
-                                persistTransactions()
-                                VaultDiagnostics.log(context, "ACTION", "Removed transaction entry")
+                                undoBannerItem = item
+                                showUndoBanner = true
+                                undoToken += 1
+                                updateTransactions(transactions.filterNot { it.id == item.id })
+                                logDiag("ACTION", "Removed transaction entry")
+                            },
+                            onResistQuarantine = { item ->
+                                triggerHaptic(strong = true)
+                                updateQuarantine(quarantineItems.filterNot { it.id == item.id })
+                                recordImpulseResisted(item.amount)
+                                val targetGoal = item.targetGoalId?.let { gid -> goals.firstOrNull { it.id == gid } }
+                                    ?: goals.firstOrNull()
+                                if (targetGoal != null) {
+                                    updateGoals(
+                                        goals.map { g ->
+                                            if (g.id == targetGoal.id) {
+                                                g.copy(savedAmount = (g.savedAmount + item.amount).coerceAtMost(MAX_FINANCE_AMOUNT))
+                                            } else {
+                                                g
+                                            }
+                                        }
+                                    )
+                                    val transferEntry = TransactionItem(
+                                        id = nextUniqueId(transactions.map { it.id }),
+                                        title = "Saved to ${targetGoal.title}",
+                                        amount = item.amount,
+                                        type = TransactionType.EXPENSE,
+                                        category = Category.GOAL_TRANSFER,
+                                        timestamp = System.currentTimeMillis(),
+                                        note = "Resisted impulse: ${item.title}"
+                                    )
+                                    updateTransactions(listOf(transferEntry) + transactions)
+                                    Toast.makeText(
+                                        context,
+                                        "Resisted! Moved ${formatMoney(item.amount, currency.symbol, hasFractionalCents(item.amount))} to ${targetGoal.title}",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                } else {
+                                    Toast.makeText(
+                                        context,
+                                        "Impulse Resisted: ${formatMoney(item.amount, currency.symbol, hasFractionalCents(item.amount))} Saved!",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                                logDiag("ACTION", "Resisted quarantined impulse purchase")
+                            },
+                            onApproveQuarantine = { item ->
+                                triggerHaptic(strong = true)
+                                updateQuarantine(quarantineItems.filterNot { it.id == item.id })
+                                val entry = TransactionItem(
+                                    id = nextUniqueId(transactions.map { it.id }),
+                                    title = item.title,
+                                    amount = item.amount,
+                                    type = TransactionType.EXPENSE,
+                                    category = item.category,
+                                    timestamp = System.currentTimeMillis(),
+                                    note = "Approved after Cooling-Off Period"
+                                )
+                                updateTransactions(listOf(entry) + transactions)
+                                logDiag("ACTION", "Approved quarantined purchase")
+                                Toast.makeText(context, "Purchase Recorded", Toast.LENGTH_SHORT).show()
+                            },
+                            onRemoveQuarantine = { item ->
+                                triggerHaptic()
+                                updateQuarantine(quarantineItems.filterNot { it.id == item.id })
                             }
                         )
 
                         1 -> InsightsScreen(
-                            transactions = transactions.toList(),
-                            goals = goals.toList(),
+                            transactions = transactions,
+                            goals = goals,
                             currency = currency,
                             primary = animatedPrimary,
                             secondary = animatedSecondary,
                             monthlyBudget = monthlyBudget,
+                            hourlyRate = hourlyRate,
+                            impulseResistedTotal = impulseResistedTotal,
+                            impulseResistedCount = impulseResistedCount,
                             hideBalance = hideBalance,
+                            animationsEnabled = animationsEnabled,
                             onHaptic = { triggerHaptic() }
                         )
 
                         2 -> GoalsScreen(
-                            goals = goals.toList(),
+                            goals = goals,
+                            liquidBalance = liveLiquidBalance,
+                            impulseResistedTotal = impulseResistedTotal,
+                            impulseResistedCount = impulseResistedCount,
                             currency = currency,
                             theme = activeTheme,
                             primary = animatedPrimary,
                             secondary = animatedSecondary,
                             hideBalance = hideBalance,
+                            animationsEnabled = animationsEnabled,
                             onAddGoal = {
                                 triggerHaptic()
                                 editingGoal = null
@@ -1098,37 +1998,61 @@ private fun FinVaultApp() {
                                 triggerHaptic()
                                 activeDepositGoal = goal
                             },
+                            onWithdrawGoal = { goal ->
+                                triggerHaptic()
+                                activeWithdrawGoal = goal
+                            },
                             onDeleteGoal = { goal ->
-                                triggerHaptic(strong = true)
-                                goals.removeAll { it.id == goal.id }
-                                persistGoals()
-                                VaultDiagnostics.log(context, "ACTION", "Deleted savings goal")
+                                triggerHaptic()
+                                pendingDeleteGoal = goal
                             }
                         )
 
                         else -> SettingsScreen(
                             monthlyBudget = monthlyBudget,
+                            currentLiquidBalance = liveLiquidBalance,
+                            hourlyRate = hourlyRate,
                             currency = currency,
                             activeTheme = activeTheme,
                             hapticsEnabled = hapticsEnabled,
                             hideBalance = hideBalance,
+                            animationsEnabled = animationsEnabled,
+                            autoCheckUpdates = autoCheckUpdates,
+                            isCheckingUpdates = isCheckingUpdates,
+                            updateStatusText = updateStatusText,
+                            availableUpdate = availableUpdate,
+                            devSettingsUnlocked = devSettingsUnlocked,
+                            includePreReleases = includePreReleases,
                             primary = animatedPrimary,
-                            hasCrashReport = VaultDiagnostics.readLastCrash(context) != null,
+                            hasCrashReport = hasCrashReport,
+                            onSetBalance = {
+                                triggerHaptic()
+                                showSetBalanceDialog = true
+                            },
                             onEditBudget = {
                                 triggerHaptic()
                                 showEditBudgetDialog = true
+                            },
+                            onEditHourlyRate = {
+                                triggerHaptic()
+                                showHourlyRateDialog = true
                             },
                             onSelectCurrency = { selected ->
                                 triggerHaptic()
                                 currency = selected
                                 VaultStorage.saveCurrency(context, selected)
-                                VaultDiagnostics.log(context, "PREF", "Currency changed to ${selected.code}")
+                                logDiag("PREF", "Currency changed to ${selected.code}")
                             },
                             onSelectTheme = { selected ->
                                 triggerHaptic()
                                 activeTheme = selected
                                 VaultStorage.saveTheme(context, selected)
-                                VaultDiagnostics.log(context, "PREF", "Theme changed to ${selected.title}")
+                                logDiag("PREF", "Theme changed to ${selected.title}")
+                            },
+                            onToggleAnimations = { enabled ->
+                                animationsEnabled = enabled
+                                VaultStorage.saveAnimationsEnabled(context, enabled)
+                                triggerHaptic()
                             },
                             onToggleHaptics = { enabled ->
                                 hapticsEnabled = enabled
@@ -1140,18 +2064,58 @@ private fun FinVaultApp() {
                                 hideBalance = hidden
                                 VaultStorage.saveHideBalance(context, hidden)
                             },
+                            onToggleAutoCheckUpdates = { enabled ->
+                                triggerHaptic()
+                                autoCheckUpdates = enabled
+                                VaultStorage.saveAutoCheckUpdates(context, enabled)
+                                logDiag("PREF", "Auto update check=$enabled")
+                            },
+                            onCheckForUpdates = {
+                                triggerHaptic()
+                                runUpdateCheck(manual = true)
+                            },
+                            onOpenUpdateDialog = {
+                                triggerHaptic()
+                                showUpdateDialog = true
+                            },
+                            onToggleIncludePreReleases = { include ->
+                                triggerHaptic()
+                                includePreReleases = include
+                                VaultStorage.saveIncludePreReleases(context, include)
+                                logDiag("DEV", "Pre-release channel=$include")
+                                runUpdateCheck(manual = false)
+                            },
+                            onReplaySetup = {
+                                triggerHaptic()
+                                setupCompleted = false
+                            },
+                            onHideDevSettings = {
+                                triggerHaptic(strong = true)
+                                devSettingsUnlocked = false
+                                includePreReleases = false
+                                devTapCount = 0
+                                VaultStorage.saveDevSettingsUnlocked(context, false)
+                                VaultStorage.saveIncludePreReleases(context, false)
+                                Toast.makeText(context, "Developer Settings Hidden", Toast.LENGTH_SHORT).show()
+                            },
+                            onTapVersionSecret = { handleSecretVersionTap() },
                             onExportBackupJson = {
                                 triggerHaptic()
                                 val json = VaultStorage.exportFullBackupJson(
                                     monthlyBudget = monthlyBudget,
+                                    openingBalance = openingBalance,
+                                    hourlyRate = hourlyRate,
+                                    impulseResistedTotal = impulseResistedTotal,
+                                    impulseResistedCount = impulseResistedCount,
                                     currency = currency,
-                                    transactions = transactions.toList(),
-                                    goals = goals.toList(),
-                                    presets = presets.toList()
+                                    transactions = transactions,
+                                    goals = goals,
+                                    presets = presets,
+                                    quarantine = quarantineItems
                                 )
-                                VaultDiagnostics.log(context, "BACKUP", "Exported JSON backup")
+                                logDiag("BACKUP", "Exported JSON backup")
                                 copyToClipboard(
-                                    label = "FinVault JSON Backup",
+                                    label = "$APP_BRAND_NAME JSON Backup",
                                     text = json,
                                     toastMessage = "JSON Backup Copied to Clipboard"
                                 )
@@ -1170,12 +2134,12 @@ private fun FinVaultApp() {
                                     ).show()
                                 } else {
                                     val csv = VaultStorage.exportCsvStatement(
-                                        transactions = transactions.toList(),
+                                        transactions = transactions,
                                         currency = currency
                                     )
-                                    VaultDiagnostics.log(context, "EXPORT", "Exported CSV statement")
+                                    logDiag("EXPORT", "Exported CSV statement")
                                     copyToClipboard(
-                                        label = "FinVault CSV Statement",
+                                        label = "$APP_BRAND_NAME CSV Statement",
                                         text = csv,
                                         toastMessage = "CSV Statement Copied to Clipboard"
                                     )
@@ -1203,14 +2167,22 @@ private fun FinVaultApp() {
 
                 // Undo Delete Floating Banner
                 AnimatedVisibility(
-                    visible = undoDeletedItem != null,
-                    enter = fadeIn(tween(180)) + slideInVertically { it / 2 },
-                    exit = fadeOut(tween(180)) + slideOutVertically { it / 2 },
+                    visible = showUndoBanner && undoBannerItem != null,
+                    enter = if (animationsEnabled) {
+                        fadeIn(tween(180)) + slideInVertically { it / 2 }
+                    } else {
+                        fadeIn(snap())
+                    },
+                    exit = if (animationsEnabled) {
+                        fadeOut(tween(180)) + slideOutVertically { it / 2 }
+                    } else {
+                        fadeOut(snap())
+                    },
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .padding(horizontal = 18.dp, vertical = 14.dp)
                 ) {
-                    val deleted = undoDeletedItem
+                    val deleted = undoBannerItem
                     if (deleted != null) {
                         Row(
                             modifier = Modifier
@@ -1242,11 +2214,14 @@ private fun FinVaultApp() {
                                     .clip(RoundedCornerShape(8.dp))
                                     .background(animatedPrimary.copy(alpha = 0.16f))
                                     .clickable {
-                                        triggerHaptic()
-                                        transactions.add(0, deleted)
-                                        persistTransactions()
-                                        undoDeletedItem = null
-                                        VaultDiagnostics.log(context, "ACTION", "Restored deleted transaction")
+                                        if (showUndoBanner) {
+                                            triggerHaptic()
+                                            showUndoBanner = false
+                                            if (transactions.none { it.id == deleted.id }) {
+                                                updateTransactions(listOf(deleted) + transactions)
+                                                logDiag("ACTION", "Restored deleted transaction")
+                                            }
+                                        }
                                     }
                                     .padding(horizontal = 10.dp, vertical = 5.dp)
                             )
@@ -1260,6 +2235,7 @@ private fun FinVaultApp() {
             TransactionEditorDialog(
                 existingItem = editingTransaction,
                 initialType = initialTransactionType,
+                goals = goals,
                 currency = currency,
                 primary = animatedPrimary,
                 onDismiss = {
@@ -1269,9 +2245,11 @@ private fun FinVaultApp() {
                 onDelete = editingTransaction?.let { existing ->
                     {
                         triggerHaptic(strong = true)
-                        undoDeletedItem = existing
-                        transactions.removeAll { it.id == existing.id }
-                        persistTransactions()
+                        undoBannerItem = existing
+                        showUndoBanner = true
+                        undoToken += 1
+                        updateTransactions(transactions.filterNot { it.id == existing.id })
+                        logDiag("ACTION", "Removed transaction entry")
                         showAddTransactionDialog = false
                         editingTransaction = null
                     }
@@ -1280,46 +2258,78 @@ private fun FinVaultApp() {
                     {
                         triggerHaptic(strong = true)
                         val copy = existing.copy(
-                            id = System.currentTimeMillis(),
+                            id = nextUniqueId(transactions.map { it.id }),
                             timestamp = System.currentTimeMillis()
                         )
-                        transactions.add(0, copy)
-                        persistTransactions()
+                        updateTransactions(listOf(copy) + transactions)
+                        logDiag("ACTION", "Duplicated transaction entry")
                         showAddTransactionDialog = false
                         editingTransaction = null
                         Toast.makeText(context, "Duplicated Entry for Today", Toast.LENGTH_SHORT).show()
                     }
                 },
-                onSave = { title, amount, type, category, note, timestamp ->
+                onSave = { title, amount, type, category, note, timestamp, depositGoalId ->
                     triggerHaptic(strong = true)
                     val existing = editingTransaction
                     if (existing != null) {
-                        val idx = transactions.indexOfFirst { it.id == existing.id }
-                        if (idx >= 0) {
-                            transactions[idx] = existing.copy(
-                                title = title,
-                                amount = amount,
-                                type = type,
-                                category = category,
-                                timestamp = timestamp,
-                                note = note
-                            )
+                        val updated = transactions.map { item ->
+                            if (item.id == existing.id) {
+                                item.copy(
+                                    title = title,
+                                    amount = amount,
+                                    type = type,
+                                    category = category,
+                                    timestamp = timestamp,
+                                    note = note
+                                )
+                            } else {
+                                item
+                            }
                         }
-                        VaultDiagnostics.log(context, "ACTION", "Updated transaction entry")
+                        updateTransactions(updated)
+                        logDiag("ACTION", "Updated transaction entry")
                     } else {
+                        val targetGoal = if (type == TransactionType.EXPENSE && depositGoalId != null) {
+                            goals.firstOrNull { it.id == depositGoalId }
+                        } else {
+                            null
+                        }
+                        val finalCategory = if (targetGoal != null) Category.GOAL_TRANSFER else category
+                        val finalNote = if (targetGoal != null) {
+                            if (note.isBlank()) "Deposited to Goal: ${targetGoal.title}" else "$note • Goal: ${targetGoal.title}"
+                        } else {
+                            note
+                        }
                         val entry = TransactionItem(
-                            id = System.currentTimeMillis(),
+                            id = nextUniqueId(transactions.map { it.id }),
                             title = title,
                             amount = amount,
                             type = type,
-                            category = category,
+                            category = finalCategory,
                             timestamp = timestamp,
-                            note = note
+                            note = finalNote
                         )
-                        transactions.add(0, entry)
-                        VaultDiagnostics.log(context, "ACTION", "Created ${type.name} transaction")
+                        updateTransactions(listOf(entry) + transactions)
+                        if (targetGoal != null) {
+                            updateGoals(
+                                goals.map { g ->
+                                    if (g.id == targetGoal.id) {
+                                        g.copy(savedAmount = (g.savedAmount + amount).coerceAtMost(MAX_FINANCE_AMOUNT))
+                                    } else {
+                                        g
+                                    }
+                                }
+                            )
+                            logDiag("ACTION", "Transferred expense amount to savings goal")
+                            Toast.makeText(
+                                context,
+                                "Deposited ${formatMoney(amount, currency.symbol, hasFractionalCents(amount))} to ${targetGoal.title}",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        } else {
+                            logDiag("ACTION", "Created ${type.name} transaction")
+                        }
                     }
-                    persistTransactions()
                     showAddTransactionDialog = false
                     editingTransaction = null
                 }
@@ -1328,16 +2338,18 @@ private fun FinVaultApp() {
 
         if (showSimulatorDialog) {
             PurchaseImpactSimulatorDialog(
-                transactions = transactions.toList(),
-                goals = goals.toList(),
+                transactions = transactions,
+                goals = goals,
+                openingBalance = openingBalance,
                 monthlyBudget = monthlyBudget,
+                hourlyRate = hourlyRate,
                 currency = currency,
                 primary = animatedPrimary,
                 onDismiss = { showSimulatorDialog = false },
                 onRecordPurchase = { itemTitle, amount, category ->
                     triggerHaptic(strong = true)
                     val entry = TransactionItem(
-                        id = System.currentTimeMillis(),
+                        id = nextUniqueId(transactions.map { it.id }),
                         title = itemTitle,
                         amount = amount,
                         type = TransactionType.EXPENSE,
@@ -1345,27 +2357,65 @@ private fun FinVaultApp() {
                         timestamp = System.currentTimeMillis(),
                         note = "Approved via Purchase Simulator"
                     )
-                    transactions.add(0, entry)
-                    persistTransactions()
+                    updateTransactions(listOf(entry) + transactions)
+                    logDiag("ACTION", "Recorded purchase via simulator")
                     showSimulatorDialog = false
                     Toast.makeText(context, "Purchase Recorded", Toast.LENGTH_SHORT).show()
                 },
                 onSaveInstead = { goalId, amount, itemTitle ->
                     triggerHaptic(strong = true)
-                    val idx = goals.indexOfFirst { it.id == goalId }
-                    if (idx >= 0) {
-                        goals[idx] = goals[idx].copy(
-                            savedAmount = goals[idx].savedAmount + amount
+                    recordImpulseResisted(amount)
+                    val targetGoal = goals.firstOrNull { it.id == goalId }
+                    if (targetGoal != null) {
+                        val updated = goals.map { goal ->
+                            if (goal.id == goalId) {
+                                goal.copy(
+                                    savedAmount = (goal.savedAmount + amount).coerceAtMost(MAX_FINANCE_AMOUNT)
+                                )
+                            } else {
+                                goal
+                            }
+                        }
+                        updateGoals(updated)
+                        val transferEntry = TransactionItem(
+                            id = nextUniqueId(transactions.map { it.id }),
+                            title = "Saved to ${targetGoal.title}",
+                            amount = amount,
+                            type = TransactionType.EXPENSE,
+                            category = Category.GOAL_TRANSFER,
+                            timestamp = System.currentTimeMillis(),
+                            note = "Skipped purchase: $itemTitle"
                         )
-                        persistGoals()
-                        VaultDiagnostics.log(context, "ACTION", "Transferred impulse savings to goal")
+                        updateTransactions(listOf(transferEntry) + transactions)
+                        logDiag("ACTION", "Transferred impulse savings to goal")
                         Toast.makeText(
                             context,
-                            "Saved ${formatMoney(amount, currency.symbol, false)} Instead of Buying $itemTitle!",
+                            "Saved ${formatMoney(amount, currency.symbol, hasFractionalCents(amount))} Instead of Buying $itemTitle!",
                             Toast.LENGTH_SHORT
                         ).show()
                     }
                     showSimulatorDialog = false
+                },
+                onQuarantinePurchase = { itemTitle, amount, category, targetGoalId, hours ->
+                    triggerHaptic(strong = true)
+                    val now = System.currentTimeMillis()
+                    val item = QuarantineItem(
+                        id = nextUniqueId(quarantineItems.map { it.id }),
+                        title = itemTitle,
+                        amount = amount,
+                        category = category,
+                        targetGoalId = targetGoalId,
+                        createdAt = now,
+                        unlockAt = now + hours * 60L * 60L * 1000L
+                    )
+                    updateQuarantine(quarantineItems + item)
+                    logDiag("ACTION", "Quarantined planned purchase for ${hours}h")
+                    showSimulatorDialog = false
+                    Toast.makeText(
+                        context,
+                        "Locked in Cooling-Off Vault for ${hours}h",
+                        Toast.LENGTH_SHORT
+                    ).show()
                 }
             )
         }
@@ -1377,16 +2427,15 @@ private fun FinVaultApp() {
                 onDismiss = { showAddPresetDialog = false },
                 onSave = { title, amount, type, category ->
                     triggerHaptic(strong = true)
-                    presets.add(
-                        QuickPreset(
-                            id = System.currentTimeMillis(),
-                            title = title,
-                            amount = amount,
-                            type = type,
-                            category = category
-                        )
+                    val preset = QuickPreset(
+                        id = nextUniqueId(presets.map { it.id }),
+                        title = title,
+                        amount = amount,
+                        type = type,
+                        category = category
                     )
-                    persistPresets()
+                    updatePresets(presets + preset)
+                    logDiag("ACTION", "Created quick preset")
                     showAddPresetDialog = false
                 }
             )
@@ -1401,29 +2450,35 @@ private fun FinVaultApp() {
                     showGoalEditorDialog = false
                     editingGoal = null
                 },
-                onSave = { title, target, initialSaved, colorHex ->
+                onSave = { title, target, savedAmount, colorHex ->
                     triggerHaptic(strong = true)
                     val existing = editingGoal
                     if (existing != null) {
-                        val idx = goals.indexOfFirst { it.id == existing.id }
-                        if (idx >= 0) {
-                            goals[idx] = existing.copy(
-                                title = title,
-                                targetAmount = target,
-                                colorHex = colorHex
-                            )
+                        val updated = goals.map { goal ->
+                            if (goal.id == existing.id) {
+                                goal.copy(
+                                    title = title,
+                                    targetAmount = target,
+                                    savedAmount = savedAmount,
+                                    colorHex = colorHex
+                                )
+                            } else {
+                                goal
+                            }
                         }
+                        updateGoals(updated)
+                        logDiag("ACTION", "Updated savings goal")
                     } else {
                         val goal = SavingsGoal(
-                            id = System.currentTimeMillis(),
+                            id = nextUniqueId(goals.map { it.id }),
                             title = title,
                             targetAmount = target,
-                            savedAmount = initialSaved,
+                            savedAmount = savedAmount,
                             colorHex = colorHex
                         )
-                        goals.add(goal)
+                        updateGoals(goals + goal)
+                        logDiag("ACTION", "Created savings goal")
                     }
-                    persistGoals()
                     showGoalEditorDialog = false
                     editingGoal = null
                 }
@@ -1433,20 +2488,113 @@ private fun FinVaultApp() {
         activeDepositGoal?.let { goal ->
             DepositGoalDialog(
                 goal = goal,
+                liquidBalance = liveLiquidBalance,
                 currency = currency,
                 primary = animatedPrimary,
+                hideBalance = hideBalance,
                 onDismiss = { activeDepositGoal = null },
-                onConfirm = { depositAmount ->
+                onConfirm = { depositAmount, transferFromLiquid ->
                     triggerHaptic(strong = true)
-                    val index = goals.indexOfFirst { it.id == goal.id }
-                    if (index >= 0) {
-                        val updated = goals[index].copy(
-                            savedAmount = goals[index].savedAmount + depositAmount
-                        )
-                        goals[index] = updated
-                        persistGoals()
+                    val updated = goals.map { item ->
+                        if (item.id == goal.id) {
+                            item.copy(
+                                savedAmount = (item.savedAmount + depositAmount).coerceAtMost(MAX_FINANCE_AMOUNT)
+                            )
+                        } else {
+                            item
+                        }
                     }
+                    updateGoals(updated)
+                    if (transferFromLiquid) {
+                        val transferEntry = TransactionItem(
+                            id = nextUniqueId(transactions.map { it.id }),
+                            title = "Deposit to ${goal.title}",
+                            amount = depositAmount,
+                            type = TransactionType.EXPENSE,
+                            category = Category.GOAL_TRANSFER,
+                            timestamp = System.currentTimeMillis(),
+                            note = "Moved from Liquid Vault to Savings Reserve"
+                        )
+                        updateTransactions(listOf(transferEntry) + transactions)
+                    }
+                    logDiag("ACTION", "Deposited to savings goal (fromLiquid=$transferFromLiquid)")
                     activeDepositGoal = null
+                }
+            )
+        }
+
+        activeWithdrawGoal?.let { goal ->
+            WithdrawGoalDialog(
+                goal = goal,
+                currency = currency,
+                primary = animatedPrimary,
+                hideBalance = hideBalance,
+                onDismiss = { activeWithdrawGoal = null },
+                onConfirm = { withdrawAmount, returnToLiquid ->
+                    triggerHaptic(strong = true)
+                    val updated = goals.map { item ->
+                        if (item.id == goal.id) {
+                            item.copy(
+                                savedAmount = max(0.0, item.savedAmount - withdrawAmount)
+                            )
+                        } else {
+                            item
+                        }
+                    }
+                    updateGoals(updated)
+                    if (returnToLiquid) {
+                        val refundEntry = TransactionItem(
+                            id = nextUniqueId(transactions.map { it.id }),
+                            title = "Withdraw from ${goal.title}",
+                            amount = withdrawAmount,
+                            type = TransactionType.INCOME,
+                            category = Category.GOAL_WITHDRAW,
+                            timestamp = System.currentTimeMillis(),
+                            note = "Returned from Savings Reserve to Liquid Vault"
+                        )
+                        updateTransactions(listOf(refundEntry) + transactions)
+                    }
+                    logDiag("ACTION", "Withdrew from savings goal (toLiquid=$returnToLiquid)")
+                    Toast.makeText(
+                        context,
+                        if (returnToLiquid) {
+                            "Returned ${formatMoney(withdrawAmount, currency.symbol, hasFractionalCents(withdrawAmount))} to Liquid Vault"
+                        } else {
+                            "Withdrew ${formatMoney(withdrawAmount, currency.symbol, hasFractionalCents(withdrawAmount))} from ${goal.title}"
+                        },
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    activeWithdrawGoal = null
+                }
+            )
+        }
+
+        pendingDeleteGoal?.let { goal ->
+            ConfirmActionDialog(
+                title = "Delete Savings Goal?",
+                message = "Remove \"${goal.title}\" and its saved milestone progress from this device?",
+                confirmLabel = "Delete Goal",
+                onDismiss = { pendingDeleteGoal = null },
+                onConfirm = {
+                    triggerHaptic(strong = true)
+                    updateGoals(goals.filterNot { it.id == goal.id })
+                    logDiag("ACTION", "Deleted savings goal")
+                    pendingDeleteGoal = null
+                }
+            )
+        }
+
+        pendingDeletePreset?.let { preset ->
+            ConfirmActionDialog(
+                title = "Delete Quick Preset?",
+                message = "Remove the \"${preset.title}\" one-tap preset? Previously logged entries will remain in your ledger.",
+                confirmLabel = "Delete Preset",
+                onDismiss = { pendingDeletePreset = null },
+                onConfirm = {
+                    triggerHaptic(strong = true)
+                    updatePresets(presets.filterNot { it.id == preset.id })
+                    logDiag("ACTION", "Deleted quick preset")
+                    pendingDeletePreset = null
                 }
             )
         }
@@ -1461,10 +2609,63 @@ private fun FinVaultApp() {
                     triggerHaptic(strong = true)
                     monthlyBudget = newBudget
                     VaultStorage.saveMonthlyBudget(context, newBudget)
-                    VaultDiagnostics.log(context, "PREF", "Monthly cap updated")
+                    logDiag("PREF", "Monthly cap updated")
                     showEditBudgetDialog = false
                 }
             )
+        }
+
+        if (showSetBalanceDialog) {
+            SetBalanceDialog(
+                currentBalance = liveLiquidBalance,
+                currency = currency,
+                primary = animatedPrimary,
+                onDismiss = { showSetBalanceDialog = false },
+                onSave = { desired ->
+                    triggerHaptic(strong = true)
+                    setDesiredLiquidBalance(desired)
+                    showSetBalanceDialog = false
+                    Toast.makeText(
+                        context,
+                        "Liquid Balance Synced to ${formatMoney(desired, currency.symbol, hasFractionalCents(desired))}",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            )
+        }
+
+        if (showHourlyRateDialog) {
+            EditHourlyRateDialog(
+                currentRate = hourlyRate,
+                currency = currency,
+                primary = animatedPrimary,
+                onDismiss = { showHourlyRateDialog = false },
+                onSave = { newRate ->
+                    triggerHaptic(strong = true)
+                    hourlyRate = newRate
+                    VaultStorage.saveHourlyRate(context, newRate)
+                    logDiag("PREF", "Hourly rate updated")
+                    showHourlyRateDialog = false
+                }
+            )
+        }
+
+        if (showUpdateDialog) {
+            availableUpdate?.let { update ->
+                UpdateAvailableDialog(
+                    update = update,
+                    primary = animatedPrimary,
+                    onDownloadApk = { apkUrl ->
+                        triggerHaptic()
+                        openExternalUrl(context, apkUrl)
+                    },
+                    onOpenReleasePage = { url ->
+                        triggerHaptic()
+                        openExternalUrl(context, url)
+                    },
+                    onDismiss = { showUpdateDialog = false }
+                )
+            }
         }
 
         if (showImportBackupDialog) {
@@ -1474,19 +2675,24 @@ private fun FinVaultApp() {
                 onImport = { payload ->
                     triggerHaptic(strong = true)
                     monthlyBudget = payload.monthlyBudget
+                    openingBalance = payload.openingBalance
+                    hourlyRate = payload.hourlyRate
+                    impulseResistedTotal = payload.impulseResistedTotal
+                    impulseResistedCount = payload.impulseResistedCount
                     currency = payload.currency
-                    transactions.clear()
-                    transactions.addAll(payload.transactions)
-                    goals.clear()
-                    goals.addAll(payload.goals)
-                    presets.clear()
-                    presets.addAll(payload.presets)
                     VaultStorage.saveMonthlyBudget(context, monthlyBudget)
+                    VaultStorage.saveOpeningBalance(context, openingBalance)
+                    VaultStorage.saveHourlyRate(context, hourlyRate)
+                    VaultStorage.saveImpulseResistedTotal(context, impulseResistedTotal)
+                    VaultStorage.saveImpulseResistedCount(context, impulseResistedCount)
                     VaultStorage.saveCurrency(context, currency)
-                    persistTransactions()
-                    persistGoals()
-                    persistPresets()
-                    VaultDiagnostics.log(context, "BACKUP", "Restored JSON backup successfully")
+                    updateTransactions(payload.transactions)
+                    updateGoals(payload.goals)
+                    updatePresets(payload.presets)
+                    updateQuarantine(payload.quarantine)
+                    showUndoBanner = false
+                    undoBannerItem = null
+                    logDiag("BACKUP", "Restored JSON backup successfully")
                     showImportBackupDialog = false
                     Toast.makeText(context, "Backup Restored Successfully", Toast.LENGTH_SHORT).show()
                 }
@@ -1494,9 +2700,16 @@ private fun FinVaultApp() {
         }
 
         if (showSupportDialog) {
-            ContactAndReportDialog(
-                primary = animatedPrimary,
-                diagnosticBundle = VaultDiagnostics.buildDiagnosticBundle(
+            val supportBundle = remember(
+                diagnosticsVersion,
+                activeTheme,
+                currency,
+                transactions.size,
+                goals.size,
+                presets.size,
+                monthlyBudget > 0.0
+            ) {
+                VaultDiagnostics.buildDiagnosticBundle(
                     context = context,
                     theme = activeTheme,
                     currency = currency,
@@ -1504,7 +2717,11 @@ private fun FinVaultApp() {
                     goalCount = goals.size,
                     presetCount = presets.size,
                     hasMonthlyCap = monthlyBudget > 0.0
-                ),
+                )
+            }
+            ContactAndReportDialog(
+                primary = animatedPrimary,
+                diagnosticBundle = supportBundle,
                 onSendEmail = { subject, body ->
                     triggerHaptic()
                     launchEmailReport(context, subject, body)
@@ -1522,7 +2739,7 @@ private fun FinVaultApp() {
                 onCopyReport = { fullReport ->
                     triggerHaptic()
                     copyToClipboard(
-                        label = "FinVault Support Report",
+                        label = "$APP_BRAND_NAME Support Report",
                         text = fullReport,
                         toastMessage = "Report & Diagnostics Copied to Clipboard"
                     )
@@ -1532,10 +2749,12 @@ private fun FinVaultApp() {
         }
 
         if (showLogsViewerDialog) {
+            val recentLogs = remember(diagnosticsVersion) { VaultDiagnostics.readLogs(context) }
+            val capturedCrash = remember(diagnosticsVersion) { VaultDiagnostics.readLastCrash(context) }
             DiagnosticLogsDialog(
                 primary = animatedPrimary,
-                logs = VaultDiagnostics.readLogs(context),
-                lastCrash = VaultDiagnostics.readLastCrash(context),
+                logs = recentLogs,
+                lastCrash = capturedCrash,
                 onCopyBundle = {
                     triggerHaptic()
                     val bundle = VaultDiagnostics.buildDiagnosticBundle(
@@ -1548,7 +2767,7 @@ private fun FinVaultApp() {
                         hasMonthlyCap = monthlyBudget > 0.0
                     )
                     copyToClipboard(
-                        label = "FinVault Diagnostic Logs",
+                        label = "$APP_BRAND_NAME Diagnostic Logs",
                         text = bundle,
                         toastMessage = "Diagnostic Logs Copied to Clipboard"
                     )
@@ -1556,6 +2775,7 @@ private fun FinVaultApp() {
                 onClearLogs = {
                     triggerHaptic(strong = true)
                     VaultDiagnostics.clearAll(context)
+                    diagnosticsVersion += 1
                     showLogsViewerDialog = false
                     Toast.makeText(context, "Diagnostic Logs Cleared", Toast.LENGTH_SHORT).show()
                 },
@@ -1564,19 +2784,30 @@ private fun FinVaultApp() {
         }
 
         if (showResetConfirmDialog) {
-            ConfirmResetDialog(
+            ConfirmActionDialog(
+                title = "Clear All Local Data?",
+                message = "This action permanently removes all transactions, savings goals, quick presets, quarantined items, synced balance, and your monthly cap from this device.",
+                confirmLabel = "Clear Data",
                 onDismiss = { showResetConfirmDialog = false },
                 onConfirm = {
                     triggerHaptic(strong = true)
                     monthlyBudget = 0.0
-                    transactions.clear()
-                    goals.clear()
-                    presets.clear()
+                    openingBalance = 0.0
+                    hourlyRate = 0.0
+                    impulseResistedTotal = 0.0
+                    impulseResistedCount = 0
                     VaultStorage.saveMonthlyBudget(context, 0.0)
-                    persistTransactions()
-                    persistGoals()
-                    persistPresets()
-                    VaultDiagnostics.log(context, "STORAGE", "Cleared all local financial records")
+                    VaultStorage.saveOpeningBalance(context, 0.0)
+                    VaultStorage.saveHourlyRate(context, 0.0)
+                    VaultStorage.saveImpulseResistedTotal(context, 0.0)
+                    VaultStorage.saveImpulseResistedCount(context, 0)
+                    updateTransactions(emptyList())
+                    updateGoals(emptyList())
+                    updatePresets(emptyList())
+                    updateQuarantine(emptyList())
+                    showUndoBanner = false
+                    undoBannerItem = null
+                    logDiag("STORAGE", "Cleared all local financial records")
                     showResetConfirmDialog = false
                     Toast.makeText(context, "All Data Cleared", Toast.LENGTH_SHORT).show()
                 }
@@ -1587,6 +2818,7 @@ private fun FinVaultApp() {
             CreditsAndLicenseDialog(
                 primary = animatedPrimary,
                 secondary = animatedSecondary,
+                onTapVersionSecret = { handleSecretVersionTap() },
                 onOpenGitHub = {
                     triggerHaptic()
                     openExternalUrl(context, GITHUB_REPO_URL)
@@ -1594,13 +2826,494 @@ private fun FinVaultApp() {
                 onCopyAttribution = {
                     triggerHaptic()
                     copyToClipboard(
-                        label = "FinVault Attribution",
-                        text = "FinVault v$APP_VERSION_NAME — Open-Source Personal Budget & Savings Visualizer by $DEVELOPER_NAME ($GITHUB_REPO_URL, MIT License)",
+                        label = "$APP_BRAND_NAME Attribution",
+                        text = "$APP_BRAND_NAME v$APP_VERSION_NAME — Open-Source Personal Budget & Savings Visualizer by $DEVELOPER_NAME ($GITHUB_REPO_URL, MIT License)",
                         toastMessage = "Attribution Copied to Clipboard"
                     )
                 },
                 onDismiss = { showCreditsDialog = false }
             )
+        }
+        }
+    }
+}
+
+@Composable
+private fun FirstTimeSetupScreen(
+    isUpgrading: Boolean,
+    existingRecordCount: Int,
+    initialCurrency: CurrencyOption,
+    initialTheme: AccentTheme,
+    initialLiquidBalance: Double,
+    initialMonthlyBudget: Double,
+    initialHourlyRate: Double,
+    initialAnimationsEnabled: Boolean,
+    initialHapticsEnabled: Boolean,
+    initialHideBalance: Boolean,
+    initialAutoCheckUpdates: Boolean,
+    primary: Color,
+    secondary: Color,
+    onHaptic: () -> Unit,
+    onPreviewTheme: (AccentTheme) -> Unit,
+    onComplete: (CurrencyOption, AccentTheme, Double?, Double, Double, Boolean, Boolean, Boolean, Boolean) -> Unit
+) {
+    var step by rememberSaveable { mutableIntStateOf(0) }
+    var chosenCurrency by remember { mutableStateOf(initialCurrency) }
+    var chosenTheme by remember { mutableStateOf(initialTheme) }
+    var balanceText by remember {
+        mutableStateOf(if (initialLiquidBalance > 0.0) formatEditableAmount(initialLiquidBalance) else "")
+    }
+    var balanceEdited by remember { mutableStateOf(false) }
+    var budgetText by remember { mutableStateOf(formatEditableAmount(initialMonthlyBudget)) }
+    var hourlyText by remember { mutableStateOf(formatEditableAmount(initialHourlyRate)) }
+    var chosenAnimations by remember { mutableStateOf(initialAnimationsEnabled) }
+    var chosenHaptics by remember { mutableStateOf(initialHapticsEnabled) }
+    var chosenPrivacy by remember { mutableStateOf(initialHideBalance) }
+    var chosenAutoUpdates by remember { mutableStateOf(initialAutoCheckUpdates) }
+
+    fun finishSetup() {
+        val desiredBalance = if (balanceEdited) {
+            if (balanceText.isBlank()) 0.0 else balanceText.toDoubleOrNull()?.coerceIn(0.0, MAX_FINANCE_AMOUNT)
+        } else {
+            null
+        }
+        val cap = if (budgetText.isBlank()) 0.0 else (budgetText.toDoubleOrNull() ?: 0.0).coerceIn(0.0, MAX_FINANCE_AMOUNT)
+        val hourly = if (hourlyText.isBlank()) 0.0 else (hourlyText.toDoubleOrNull() ?: 0.0).coerceIn(0.0, MAX_FINANCE_AMOUNT)
+        onComplete(
+            chosenCurrency,
+            chosenTheme,
+            desiredBalance,
+            cap,
+            hourly,
+            chosenAnimations,
+            chosenHaptics,
+            chosenPrivacy,
+            chosenAutoUpdates
+        )
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF07080B))
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .imePadding()
+            .padding(horizontal = 20.dp, vertical = 16.dp)
+    ) {
+        // Top Step Bar + Skip
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                repeat(4) { idx ->
+                    val active = idx <= step
+                    Box(
+                        modifier = Modifier
+                            .width(if (idx == step) 26.dp else 12.dp)
+                            .height(5.dp)
+                            .clip(CircleShape)
+                            .background(if (active) primary else Color(0xFF202532))
+                    )
+                }
+            }
+            Text(
+                text = "Skip Setup",
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.5.sp),
+                color = Color(0xFF8B93A7),
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable {
+                        onHaptic()
+                        finishSetup()
+                    }
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(18.dp))
+
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+        ) {
+            AnimatedContent(
+                targetState = step,
+                transitionSpec = {
+                    if (chosenAnimations) {
+                        fadeIn(tween(200)) togetherWith fadeOut(tween(140))
+                    } else {
+                        fadeIn(snap()) togetherWith fadeOut(snap())
+                    }
+                },
+                label = "setupStep"
+            ) { currentStep ->
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    when (currentStep) {
+                        0 -> {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Box(
+                                modifier = Modifier.fillMaxWidth(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                FinVaultBrandMark(
+                                    primary = primary,
+                                    secondary = secondary,
+                                    modifier = Modifier.size(84.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "Welcome to $APP_BRAND_NAME v$APP_VERSION_NAME",
+                                style = MaterialTheme.typography.headlineLarge.copy(fontSize = 24.sp),
+                                color = Color.White,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Text(
+                                text = "A private, offline-first dual-vault ledger built for disciplined spending, savings milestones, and impulse control.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Color(0xFF9EA7BD),
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+
+                            if (isUpgrading) {
+                                SurfaceCard {
+                                    Column(modifier = Modifier.padding(16.dp)) {
+                                        Text(
+                                            text = "Existing Data Safely Preserved",
+                                            style = MaterialTheme.typography.titleMedium.copy(fontSize = 14.sp),
+                                            color = Color(0xFF10B981)
+                                        )
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = "Detected $existingRecordCount existing records from your previous FinVault install. Completing this quick setup migrates them cleanly into $APP_BRAND_NAME with all transactions, goals, and presets intact.",
+                                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.5.sp),
+                                            color = Color(0xFFC7CEDF)
+                                        )
+                                    }
+                                }
+                            }
+
+                            SurfaceCard {
+                                Column(
+                                    modifier = Modifier.padding(16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Text(
+                                        text = "WHAT IS NEW IN PRODUCTION",
+                                        style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.1.sp),
+                                        color = primary
+                                    )
+                                    Text(
+                                        text = "• Separate Liquid Vault & Savings Goal Reserve with direct Balance Sync and Goal Withdrawals.",
+                                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.5.sp),
+                                        color = Color(0xFFD6DCEB)
+                                    )
+                                    Text(
+                                        text = "• Impulse Cooling-Off Quarantine Vault, Time-Cost work-hours calculator, and Monthly Discipline Heatmap.",
+                                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.5.sp),
+                                        color = Color(0xFFD6DCEB)
+                                    )
+                                    Text(
+                                        text = "• Privacy-safe GitHub Release Updater (stable builds only by default) and customizable Animations.",
+                                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.5.sp),
+                                        color = Color(0xFFD6DCEB)
+                                    )
+                                }
+                            }
+                        }
+
+                        1 -> {
+                            Text(
+                                text = "Currency & Visual Theme",
+                                style = MaterialTheme.typography.headlineMedium.copy(fontSize = 23.sp),
+                                color = Color.White
+                            )
+                            Text(
+                                text = "Choose your preferred currency symbol and Matte Titanium palette. You can change both anytime in Settings.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Color(0xFF8B93A7)
+                            )
+
+                            SurfaceCard {
+                                Column(
+                                    modifier = Modifier.padding(16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Text(
+                                        text = "CURRENCY",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Color(0xFF8B93A7)
+                                    )
+                                    CurrencyOption.entries.forEach { option ->
+                                        val selected = option == chosenCurrency
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(if (selected) primary.copy(alpha = 0.16f) else Color(0xFF151822))
+                                                .border(
+                                                    0.85.dp,
+                                                    if (selected) primary else Color(0xFF232836),
+                                                    RoundedCornerShape(12.dp)
+                                                )
+                                                .clickable {
+                                                    onHaptic()
+                                                    chosenCurrency = option
+                                                }
+                                                .padding(horizontal = 14.dp, vertical = 11.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = option.label,
+                                                style = MaterialTheme.typography.bodyMedium.copy(
+                                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
+                                                ),
+                                                color = Color.White
+                                            )
+                                            Text(
+                                                text = option.code,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = if (selected) primary else Color(0xFF8B93A7)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            SurfaceCard {
+                                Column(
+                                    modifier = Modifier.padding(16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Text(
+                                        text = "ACCENT PALETTE",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Color(0xFF8B93A7)
+                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        AccentTheme.entries.take(2).forEach { theme ->
+                                            ThemeChoiceCard(
+                                                theme = theme,
+                                                selected = theme == chosenTheme,
+                                                onClick = {
+                                                    onHaptic()
+                                                    chosenTheme = theme
+                                                    onPreviewTheme(theme)
+                                                },
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                        }
+                                    }
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        AccentTheme.entries.drop(2).forEach { theme ->
+                                            ThemeChoiceCard(
+                                                theme = theme,
+                                                selected = theme == chosenTheme,
+                                                onClick = {
+                                                    onHaptic()
+                                                    chosenTheme = theme
+                                                    onPreviewTheme(theme)
+                                                },
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        2 -> {
+                            Text(
+                                text = "Configure Your Vault",
+                                style = MaterialTheme.typography.headlineMedium.copy(fontSize = 23.sp),
+                                color = Color.White
+                            )
+                            Text(
+                                text = "All fields below are optional. Set your starting spendable balance, monthly spending cap, or hourly rate for Time-Cost insights.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Color(0xFF8B93A7)
+                            )
+
+                            SurfaceCard {
+                                Column(
+                                    modifier = Modifier.padding(16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                                ) {
+                                    VaultTextField(
+                                        label = "Current Liquid Balance (${chosenCurrency.symbol}, Optional)",
+                                        value = balanceText,
+                                        placeholder = "Example: 5000",
+                                        accent = primary,
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                        onValueChange = { input ->
+                                            balanceText = sanitizeDecimalInput(input)
+                                            balanceEdited = true
+                                        }
+                                    )
+                                    VaultTextField(
+                                        label = "Monthly Spending Cap (${chosenCurrency.symbol}, Optional)",
+                                        value = budgetText,
+                                        placeholder = "Example: 10000",
+                                        accent = primary,
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                        onValueChange = { input -> budgetText = sanitizeDecimalInput(input) }
+                                    )
+                                    VaultTextField(
+                                        label = "Hourly Work Rate (${chosenCurrency.symbol}/Hr, Optional)",
+                                        value = hourlyText,
+                                        placeholder = "Example: 150 (For Time-Cost Simulator)",
+                                        accent = primary,
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                        onValueChange = { input -> hourlyText = sanitizeDecimalInput(input) }
+                                    )
+                                }
+                            }
+                        }
+
+                        else -> {
+                            Text(
+                                text = "Experience & Updates",
+                                style = MaterialTheme.typography.headlineMedium.copy(fontSize = 23.sp),
+                                color = Color.White
+                            )
+                            Text(
+                                text = "Tune motion, privacy, and update preferences before entering your vault.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Color(0xFF8B93A7)
+                            )
+
+                            SurfaceCard {
+                                Column(modifier = Modifier.fillMaxWidth()) {
+                                    SettingsToggleRow(
+                                        title = "Smooth Animations",
+                                        subtitle = "Fluid transitions and animated gauges. Turn off for instant zero-motion snaps.",
+                                        checked = chosenAnimations,
+                                        accent = primary,
+                                        onCheckedChange = {
+                                            onHaptic()
+                                            chosenAnimations = it
+                                        }
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 16.dp)
+                                            .height(0.75.dp)
+                                            .background(Color(0xFF1D212D))
+                                    )
+                                    SettingsToggleRow(
+                                        title = "Haptic Feedback",
+                                        subtitle = "Crisp tactile response on tabs and confirmations.",
+                                        checked = chosenHaptics,
+                                        accent = primary,
+                                        onCheckedChange = { chosenHaptics = it }
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 16.dp)
+                                            .height(0.75.dp)
+                                            .background(Color(0xFF1D212D))
+                                    )
+                                    SettingsToggleRow(
+                                        title = "Privacy Masking",
+                                        subtitle = "Mask financial amounts across all screens by default.",
+                                        checked = chosenPrivacy,
+                                        accent = primary,
+                                        onCheckedChange = {
+                                            onHaptic()
+                                            chosenPrivacy = it
+                                        }
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 16.dp)
+                                            .height(0.75.dp)
+                                            .background(Color(0xFF1D212D))
+                                    )
+                                    SettingsToggleRow(
+                                        title = "Check GitHub for Updates",
+                                        subtitle = "Automatically scan stable $APP_BRAND_NAME releases on launch. Sends zero personal data.",
+                                        checked = chosenAutoUpdates,
+                                        accent = primary,
+                                        onCheckedChange = {
+                                            onHaptic()
+                                            chosenAutoUpdates = it
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            if (step > 0) {
+                OutlinedButton(
+                    onClick = {
+                        onHaptic()
+                        step -= 1
+                    },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(0.85.dp, Color(0xFF2B3140)),
+                    contentPadding = PaddingValues(vertical = 13.dp)
+                ) {
+                    Text("Back", color = Color(0xFFB5BCD0))
+                }
+            }
+            Button(
+                onClick = {
+                    onHaptic()
+                    if (step < 3) {
+                        step += 1
+                    } else {
+                        finishSetup()
+                    }
+                },
+                modifier = Modifier.weight(if (step > 0) 1.5f else 1f),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = primary,
+                    contentColor = Color(0xFF07080B)
+                ),
+                contentPadding = PaddingValues(vertical = 13.dp)
+            ) {
+                Text(
+                    text = when (step) {
+                        0 -> "Get Started"
+                        3 -> "Enter $APP_BRAND_NAME"
+                        else -> "Continue"
+                    },
+                    fontWeight = FontWeight.Bold
+                )
+            }
         }
     }
 }
@@ -1612,6 +3325,7 @@ private data class VaultSummary(
     val monthExpense: Double,
     val totalSaved: Double,
     val netBalance: Double,
+    val totalNetWorth: Double,
     val budgetRatio: Float,
     val budgetRemaining: Double,
     val dailySafeToSpend: Double,
@@ -1624,12 +3338,20 @@ private fun VaultOverviewScreen(
     transactions: List<TransactionItem>,
     goals: List<SavingsGoal>,
     presets: List<QuickPreset>,
+    quarantineItems: List<QuarantineItem>,
     monthlyBudget: Double,
+    openingBalance: Double,
+    hourlyRate: Double,
     currency: CurrencyOption,
     theme: AccentTheme,
     primary: Color,
     secondary: Color,
     hideBalance: Boolean,
+    animationsEnabled: Boolean,
+    availableUpdate: AppUpdateInfo?,
+    onOpenUpdateDialog: () -> Unit,
+    onDismissUpdateBanner: () -> Unit,
+    onSetBalance: () -> Unit,
     onTogglePrivacy: () -> Unit,
     onAddExpense: () -> Unit,
     onAddIncome: () -> Unit,
@@ -1640,29 +3362,35 @@ private fun VaultOverviewScreen(
     onTriggerPreset: (QuickPreset) -> Unit,
     onDeletePreset: (QuickPreset) -> Unit,
     onEditTransaction: (TransactionItem) -> Unit,
-    onDeleteTransaction: (TransactionItem) -> Unit
+    onDeleteTransaction: (TransactionItem) -> Unit,
+    onResistQuarantine: (QuarantineItem) -> Unit,
+    onApproveQuarantine: (QuarantineItem) -> Unit,
+    onRemoveQuarantine: (QuarantineItem) -> Unit
 ) {
-    var filterMode by remember { mutableIntStateOf(0) }
-    var searchQuery by remember { mutableStateOf("") }
-    var monthOffset by remember { mutableIntStateOf(0) }
-    var allTimeScope by remember { mutableStateOf(false) }
+    var filterMode by rememberSaveable { mutableIntStateOf(0) }
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+    var monthOffset by rememberSaveable { mutableIntStateOf(0) }
+    var allTimeScope by rememberSaveable { mutableStateOf(false) }
 
-    val summary = remember(transactions, goals, monthlyBudget) {
+    val summary = remember(transactions, goals, monthlyBudget, openingBalance) {
         val totalIncome = transactions.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }
-        val totalExpense = transactions.filter { it.type == TransactionType.EXPENSE }.sumOf { it.amount }
-        val monthExpense = transactions
-            .filter { it.type == TransactionType.EXPENSE && isTimestampInCurrentMonth(it.timestamp) }
+        val totalOutflow = transactions.filter { it.type == TransactionType.EXPENSE }.sumOf { it.amount }
+        val realExpenses = transactions.filter {
+            it.type == TransactionType.EXPENSE && it.category != Category.GOAL_TRANSFER
+        }
+        val totalSpending = realExpenses.sumOf { it.amount }
+        val monthExpense = realExpenses
+            .filter { isTimestampInCurrentMonth(it.timestamp) }
             .sumOf { it.amount }
         val totalSaved = goals.sumOf { it.savedAmount }
-        val netBalance = totalIncome - totalExpense
+        val netBalance = openingBalance + totalIncome - totalOutflow
+        val totalNetWorth = netBalance + totalSaved
         val budgetRatio = if (monthlyBudget > 0.0) (monthExpense / monthlyBudget).toFloat() else 0f
         val remaining = if (monthlyBudget > 0.0) monthlyBudget - monthExpense else 0.0
         val daysLeft = daysRemainingInCurrentMonth()
         val dailySafe = if (monthlyBudget > 0.0) max(0.0, remaining / daysLeft) else 0.0
 
-        val expenses = transactions.filter { it.type == TransactionType.EXPENSE }
-        val activeDays = max(1, expenses.map { formatDateLabel(it.timestamp) }.distinct().size)
-        val avgDailyBurn = if (expenses.isNotEmpty()) totalExpense / activeDays else 0.0
+        val avgDailyBurn = computeRecentDailyBurn(realExpenses)
         val runway = if (netBalance > 0.0 && avgDailyBurn > 0.0) {
             min(999, (netBalance / avgDailyBurn).roundToInt())
         } else {
@@ -1671,10 +3399,11 @@ private fun VaultOverviewScreen(
 
         VaultSummary(
             totalIncome = totalIncome,
-            totalExpense = totalExpense,
+            totalExpense = totalSpending,
             monthExpense = monthExpense,
             totalSaved = totalSaved,
             netBalance = netBalance,
+            totalNetWorth = totalNetWorth,
             budgetRatio = budgetRatio,
             budgetRemaining = remaining,
             dailySafeToSpend = dailySafe,
@@ -1683,16 +3412,27 @@ private fun VaultOverviewScreen(
         )
     }
 
-    val filteredTransactions = remember(transactions, filterMode, searchQuery, monthOffset, allTimeScope) {
-        val byPeriod = if (allTimeScope) {
+    val periodTransactions = remember(transactions, monthOffset, allTimeScope) {
+        if (allTimeScope) {
             transactions
         } else {
             transactions.filter { isTimestampInMonthOffset(it.timestamp, monthOffset) }
         }
+    }
+
+    val periodTotals = remember(periodTransactions) {
+        val inc = periodTransactions.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }
+        val exp = periodTransactions
+            .filter { it.type == TransactionType.EXPENSE && it.category != Category.GOAL_TRANSFER }
+            .sumOf { it.amount }
+        Triple(inc, exp, inc - exp)
+    }
+
+    val filteredTransactions = remember(periodTransactions, filterMode, searchQuery) {
         val byType = when (filterMode) {
-            1 -> byPeriod.filter { it.type == TransactionType.EXPENSE }
-            2 -> byPeriod.filter { it.type == TransactionType.INCOME }
-            else -> byPeriod
+            1 -> periodTransactions.filter { it.type == TransactionType.EXPENSE }
+            2 -> periodTransactions.filter { it.type == TransactionType.INCOME }
+            else -> periodTransactions
         }
         val query = searchQuery.trim().lowercase(Locale.US)
         if (query.isEmpty()) {
@@ -1708,7 +3448,7 @@ private fun VaultOverviewScreen(
 
     val animatedBurnRatio by animateFloatAsState(
         targetValue = summary.budgetRatio.coerceIn(0f, 1f),
-        animationSpec = tween(400, easing = FastOutSlowInEasing),
+        animationSpec = if (animationsEnabled) tween(400, easing = FastOutSlowInEasing) else snap(),
         label = "burnProgress"
     )
 
@@ -1736,14 +3476,14 @@ private fun VaultOverviewScreen(
                     Spacer(modifier = Modifier.width(10.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "FinVault",
-                            style = MaterialTheme.typography.headlineLarge.copy(fontSize = 24.sp),
+                            text = APP_BRAND_NAME,
+                            style = MaterialTheme.typography.headlineLarge.copy(fontSize = 23.sp),
                             color = Color.White,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
                         Text(
-                            text = "Personal Ledger & Savings",
+                            text = "Dual-Vault Ledger & Savings",
                             style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
                             color = Color(0xFF8B93A7),
                             maxLines = 1,
@@ -1772,7 +3512,55 @@ private fun VaultOverviewScreen(
             }
         }
 
-        // Signature Matte Titanium Ledger Card
+        // Update Available Notification Banner (when GitHub Release Scanner finds newer build)
+        if (availableUpdate != null) {
+            item(key = "update_banner", contentType = "update_banner") {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(primary.copy(alpha = 0.14f))
+                        .border(0.85.dp, primary.copy(alpha = 0.45f), RoundedCornerShape(16.dp))
+                        .clickable(onClick = onOpenUpdateDialog)
+                        .padding(horizontal = 14.dp, vertical = 11.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = if (availableUpdate.isPreRelease) {
+                                "Pre-Release Available: ${availableUpdate.tagName}"
+                            } else {
+                                "Update Available: ${availableUpdate.tagName}"
+                            },
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp),
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = "Tap to view release notes and download from GitHub.",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 11.5.sp),
+                            color = Color(0xFFC7CEDF),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Box(
+                        modifier = Modifier
+                            .size(26.dp)
+                            .clip(CircleShape)
+                            .background(Color.Black.copy(alpha = 0.28f))
+                            .clickable(onClick = onDismissUpdateBanner),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CloseGlyph(color = Color(0xFFC7CEDF), modifier = Modifier.size(9.dp))
+                    }
+                }
+            }
+        }
+
+        // Signature Matte Titanium Dual-Vault Ledger Card
         item(key = "ledger_card", contentType = "hero") {
             MatteLedgerCard(
                 summary = summary,
@@ -1783,6 +3571,7 @@ private fun VaultOverviewScreen(
                 primary = primary,
                 secondary = secondary,
                 hideBalance = hideBalance,
+                onSetBalance = onSetBalance,
                 onEditBudget = onEditBudget
             )
         }
@@ -1795,14 +3584,24 @@ private fun VaultOverviewScreen(
             ) {
                 CashFlowMiniCard(
                     title = "Total Income",
-                    amount = formatMoney(summary.totalIncome, currency.symbol, false, hideBalance),
+                    amount = formatMoney(
+                        summary.totalIncome,
+                        currency.symbol,
+                        hasFractionalCents(summary.totalIncome),
+                        hideBalance
+                    ),
                     accent = Color(0xFF10B981),
                     isUpward = true,
                     modifier = Modifier.weight(1f)
                 )
                 CashFlowMiniCard(
                     title = "Total Expenses",
-                    amount = formatMoney(summary.totalExpense, currency.symbol, false, hideBalance),
+                    amount = formatMoney(
+                        summary.totalExpense,
+                        currency.symbol,
+                        hasFractionalCents(summary.totalExpense),
+                        hideBalance
+                    ),
                     accent = Color(0xFFF43F5E),
                     isUpward = false,
                     modifier = Modifier.weight(1f)
@@ -1954,7 +3753,165 @@ private fun VaultOverviewScreen(
             }
         }
 
-        // Recent Activity + Month Navigator + Search + Filter
+        // Impulse Cooling-Off Quarantine Locker (Exclusive Feature)
+        if (quarantineItems.isNotEmpty()) {
+            item(key = "quarantine_locker", contentType = "quarantine") {
+                val nowMs = System.currentTimeMillis()
+                SurfaceCard {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Impulse Cooling-Off Vault",
+                                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp),
+                                    color = Color.White,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = "Wait out planned buys before spending—or claim them as savings.",
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 11.5.sp),
+                                    color = Color(0xFF8B93A7),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(secondary.copy(alpha = 0.18f))
+                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                            ) {
+                                Text(
+                                    text = "${quarantineItems.size} Locked",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                    color = secondary
+                                )
+                            }
+                        }
+
+                        quarantineItems.forEach { qItem ->
+                            val countdown = formatRemainingCountdown(qItem.unlockAt, nowMs)
+                            val ready = nowMs >= qItem.unlockAt
+                            val timeCost = formatWorkHours(qItem.amount, hourlyRate)
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(Color(0xFF141824))
+                                    .border(
+                                        0.75.dp,
+                                        if (ready) Color(0xFF10B981).copy(alpha = 0.45f) else Color(0xFF232836),
+                                        RoundedCornerShape(14.dp)
+                                    )
+                                    .padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = qItem.title,
+                                            style = MaterialTheme.typography.titleMedium.copy(fontSize = 13.5.sp),
+                                            color = Color.White,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = buildString {
+                                                append(formatMoney(qItem.amount, currency.symbol, hasFractionalCents(qItem.amount), hideBalance))
+                                                if (timeCost != null && !hideBalance) append(" • $timeCost")
+                                            },
+                                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 11.5.sp),
+                                            color = Color(0xFF9EA7BD),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = countdown,
+                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                        color = if (ready) Color(0xFF10B981) else Color(0xFFF59E0B),
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(7.dp))
+                                            .background(
+                                                (if (ready) Color(0xFF10B981) else Color(0xFFF59E0B)).copy(alpha = 0.14f)
+                                            )
+                                            .padding(horizontal = 8.dp, vertical = 3.dp)
+                                    )
+                                }
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1.2f)
+                                            .clip(RoundedCornerShape(9.dp))
+                                            .background(Color(0xFF10B981).copy(alpha = 0.18f))
+                                            .border(0.75.dp, Color(0xFF10B981).copy(alpha = 0.45f), RoundedCornerShape(9.dp))
+                                            .clickable { onResistQuarantine(qItem) }
+                                            .padding(vertical = 7.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = "Resist & Save",
+                                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                                            color = Color(0xFF10B981),
+                                            maxLines = 1
+                                        )
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(9.dp))
+                                            .background(Color(0xFF1A1F2C))
+                                            .border(0.75.dp, Color(0xFF282E3E), RoundedCornerShape(9.dp))
+                                            .clickable { onApproveQuarantine(qItem) }
+                                            .padding(vertical = 7.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = "Buy Now",
+                                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                                            color = Color.White,
+                                            maxLines = 1
+                                        )
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .size(30.dp)
+                                            .clip(RoundedCornerShape(9.dp))
+                                            .background(Color(0xFF1A1F2C))
+                                            .clickable { onRemoveQuarantine(qItem) },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        CloseGlyph(color = Color(0xFF8B93A7), modifier = Modifier.size(9.dp))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Recent Activity + Month Navigator + Period Summary + Search + Filter
         item(key = "activity_header", contentType = "activity_header") {
             Column(modifier = Modifier.fillMaxWidth()) {
                 Row(
@@ -2012,7 +3969,7 @@ private fun VaultOverviewScreen(
                         modifier = Modifier
                             .weight(1f)
                             .clickable {
-                                if (allTimeScope) {
+                                if (allTimeScope || monthOffset != 0) {
                                     allTimeScope = false
                                     monthOffset = 0
                                 } else {
@@ -2063,6 +4020,47 @@ private fun VaultOverviewScreen(
                             )
                         }
                     }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Period Summary Strip (Inflow / Outflow / Net for Selected Scope)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(11.dp))
+                        .background(Color(0xFF0E1118))
+                        .border(0.75.dp, Color(0xFF1C202D), RoundedCornerShape(11.dp))
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "In: ${formatMoney(periodTotals.first, currency.symbol, false, hideBalance)}",
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.5.sp),
+                        color = Color(0xFF10B981),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text(
+                        text = "Spend: ${formatMoney(periodTotals.second, currency.symbol, false, hideBalance)}",
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.5.sp),
+                        color = Color(0xFFFB7185),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text(
+                        text = "Net: ${formatMoney(periodTotals.third, currency.symbol, false, hideBalance)}",
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.5.sp),
+                        color = Color(0xFFD6DCEB),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.End,
+                        modifier = Modifier.weight(1f)
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(10.dp))
@@ -2124,6 +4122,7 @@ private fun VaultOverviewScreen(
                     options = listOf("All", "Expenses", "Income"),
                     selectedIndex = filterMode,
                     accent = primary,
+                    animationsEnabled = animationsEnabled,
                     onSelect = { filterMode = it }
                 )
             }
@@ -2190,10 +4189,11 @@ private fun MatteLedgerCard(
     primary: Color,
     secondary: Color,
     hideBalance: Boolean,
+    onSetBalance: () -> Unit,
     onEditBudget: () -> Unit
 ) {
     val hasBudget = monthlyBudget > 0.0
-    val percentUsed = if (hasBudget) (summary.budgetRatio * 100f).roundToInt() else 0
+    val percentUsedLabel = if (hasBudget) formatCompactPercent(summary.budgetRatio.toDouble()) else "0%"
     val statusColor = when {
         !hasBudget -> primary
         summary.budgetRatio >= 1.0f -> Color(0xFFF43F5E)
@@ -2255,7 +4255,7 @@ private fun MatteLedgerCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "NET LIQUID BALANCE",
+                    text = "LIQUID VAULT BALANCE",
                     style = MaterialTheme.typography.labelSmall.copy(
                         fontSize = 10.sp,
                         letterSpacing = 1.3.sp
@@ -2266,7 +4266,25 @@ private fun MatteLedgerCard(
                     overflow = TextOverflow.Ellipsis
                 )
 
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color.White.copy(alpha = 0.08f))
+                        .border(0.75.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(8.dp))
+                        .clickable(onClick = onSetBalance)
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = "Set Balance",
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                        color = Color(0xFFE2E8F0),
+                        maxLines = 1
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(6.dp))
 
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -2303,14 +4321,15 @@ private fun MatteLedgerCard(
                 ),
                 color = Color.White,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.clickable(onClick = onSetBalance)
             )
 
             Spacer(modifier = Modifier.height(4.dp))
 
             Text(
-                text = "Vault Savings Reserved: ${formatMoney(summary.totalSaved, currency.symbol, false, hideBalance)}",
-                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+                text = "Goal Reserve Vault: ${formatMoney(summary.totalSaved, currency.symbol, hasFractionalCents(summary.totalSaved), hideBalance)} • Total Worth: ${formatMoney(summary.totalNetWorth, currency.symbol, false, hideBalance)}",
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 11.5.sp),
                 color = Color(0xFF9EA7BD),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -2414,7 +4433,7 @@ private fun MatteLedgerCard(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = if (hasBudget) "$percentUsed% Used" else "Tap to Set",
+                    text = if (hasBudget) "$percentUsedLabel Used" else "Tap to Set",
                     style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
                     color = primary,
                     modifier = Modifier.clickable(onClick = onEditBudget),
@@ -2575,6 +4594,7 @@ private fun SegmentedFilterBar(
     options: List<String>,
     selectedIndex: Int,
     accent: Color,
+    animationsEnabled: Boolean = true,
     onSelect: (Int) -> Unit
 ) {
     BoxWithConstraints(
@@ -2589,7 +4609,7 @@ private fun SegmentedFilterBar(
         val segmentWidth = maxWidth / options.size
         val pillOffset by animateDpAsState(
             targetValue = segmentWidth * selectedIndex,
-            animationSpec = tween(200, easing = FastOutSlowInEasing),
+            animationSpec = if (animationsEnabled) tween(200, easing = FastOutSlowInEasing) else snap(),
             label = "filterPill"
         )
 
@@ -2728,6 +4748,7 @@ private fun TransactionCardRow(
 private data class AnalyticsSnapshot(
     val totalIncome: Double,
     val totalExpense: Double,
+    val monthExpense: Double,
     val savingsRate: Int,
     val dailyAverage: Double,
     val noSpendStreak: Int,
@@ -2735,6 +4756,8 @@ private data class AnalyticsSnapshot(
     val largestExpenseAmount: Double,
     val categoryTotals: List<Pair<Category, Double>>,
     val sevenDayPoints: List<Pair<String, Double>>,
+    val monthDaySpends: List<Double>,
+    val currentDayOfMonth: Int,
     val healthScore: Int?,
     val healthGrade: String,
     val healthGuidance: String
@@ -2748,11 +4771,17 @@ private fun InsightsScreen(
     primary: Color,
     secondary: Color,
     monthlyBudget: Double,
+    hourlyRate: Double,
+    impulseResistedTotal: Double,
+    impulseResistedCount: Int,
     hideBalance: Boolean,
+    animationsEnabled: Boolean,
     onHaptic: () -> Unit
 ) {
     val analytics = remember(transactions, goals, monthlyBudget) {
-        val expenses = transactions.filter { it.type == TransactionType.EXPENSE }
+        val expenses = transactions.filter {
+            it.type == TransactionType.EXPENSE && it.category != Category.GOAL_TRANSFER
+        }
         val totalIncome = transactions.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }
         val totalExpense = expenses.sumOf { it.amount }
         val monthExpense = expenses.filter { isTimestampInCurrentMonth(it.timestamp) }.sumOf { it.amount }
@@ -2773,19 +4802,36 @@ private fun InsightsScreen(
             0
         }
 
-        val activeDays = max(1, expenses.map { formatDateLabel(it.timestamp) }.distinct().size)
-        val dailyAverage = if (expenses.isNotEmpty()) totalExpense / activeDays else 0.0
+        val dailyAverage = computeAverageDailySpend(expenses)
 
-        val cal = Calendar.getInstance()
         val labelFmt = SimpleDateFormat("EEE", Locale.US)
         val keyFmt = SimpleDateFormat("yyyy-MM-dd", Locale.US)
         val dailyMap = expenses.groupBy { keyFmt.format(Date(it.timestamp)) }
             .mapValues { (_, items) -> items.sumOf { it.amount } }
         val sevenDays = (6 downTo 0).map { daysAgo ->
-            cal.timeInMillis = System.currentTimeMillis() - daysAgo * 24L * 60L * 60L * 1000L
-            val key = keyFmt.format(cal.time)
-            Pair(labelFmt.format(cal.time), dailyMap[key] ?: 0.0)
+            val dayDate = calendarDaysAgo(daysAgo).time
+            val key = keyFmt.format(dayDate)
+            Pair(labelFmt.format(dayDate), dailyMap[key] ?: 0.0)
         }
+
+        // Current Month Discipline Heatmap Data
+        val monthCal = Calendar.getInstance()
+        val daysInMonth = monthCal.getActualMaximum(Calendar.DAY_OF_MONTH)
+        val todayDayOfMonth = monthCal.get(Calendar.DAY_OF_MONTH)
+        val currentYear = monthCal.get(Calendar.YEAR)
+        val currentMonth = monthCal.get(Calendar.MONTH)
+        val dayBuckets = DoubleArray(daysInMonth)
+        val itemCal = Calendar.getInstance()
+        expenses.forEach { tx ->
+            itemCal.timeInMillis = tx.timestamp
+            if (itemCal.get(Calendar.YEAR) == currentYear && itemCal.get(Calendar.MONTH) == currentMonth) {
+                val idx = itemCal.get(Calendar.DAY_OF_MONTH) - 1
+                if (idx in 0 until daysInMonth) {
+                    dayBuckets[idx] += tx.amount
+                }
+            }
+        }
+        val monthDaySpends = dayBuckets.toList()
 
         val score: Int?
         val grade: String
@@ -2833,6 +4879,7 @@ private fun InsightsScreen(
         AnalyticsSnapshot(
             totalIncome = totalIncome,
             totalExpense = totalExpense,
+            monthExpense = monthExpense,
             savingsRate = savingsRate,
             dailyAverage = dailyAverage,
             noSpendStreak = streak,
@@ -2840,6 +4887,8 @@ private fun InsightsScreen(
             largestExpenseAmount = largest?.amount ?: 0.0,
             categoryTotals = categoryTotals,
             sevenDayPoints = sevenDays,
+            monthDaySpends = monthDaySpends,
+            currentDayOfMonth = todayDayOfMonth,
             healthScore = score,
             healthGrade = grade,
             healthGuidance = guidance
@@ -2847,12 +4896,18 @@ private fun InsightsScreen(
     }
 
     var selectedCategory by remember { mutableStateOf<Category?>(null) }
-    var chartReady by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { chartReady = true }
+    var selectedHeatmapDay by remember { mutableIntStateOf(-1) }
+    LaunchedEffect(analytics.categoryTotals) {
+        if (selectedCategory != null && analytics.categoryTotals.none { it.first == selectedCategory }) {
+            selectedCategory = null
+        }
+    }
+    var chartReady by remember { mutableStateOf(!animationsEnabled) }
+    LaunchedEffect(animationsEnabled) { chartReady = true }
 
     val animProgress by animateFloatAsState(
         targetValue = if (chartReady) 1f else 0f,
-        animationSpec = tween(480, easing = FastOutSlowInEasing),
+        animationSpec = if (animationsEnabled) tween(480, easing = FastOutSlowInEasing) else snap(),
         label = "donutReveal"
     )
 
@@ -3040,6 +5095,199 @@ private fun InsightsScreen(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
+                    }
+                }
+            }
+        }
+
+        // Exclusive Behavioral Cards: Time-Cost & Impulse Resisted
+        if (hourlyRate > 0.0 || impulseResistedTotal > 0.0) {
+            item(key = "behavioral_exclusive") {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    if (hourlyRate > 0.0) {
+                        val monthWorkTime = formatWorkHours(analytics.monthExpense, hourlyRate) ?: "0 Mins"
+                        SurfaceCard(modifier = Modifier.weight(1f)) {
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Text(
+                                    text = "TIME-COST THIS MONTH",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                    color = Color(0xFF8B93A7),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = if (hideBalance) "•••• Hrs" else monthWorkTime,
+                                    style = MaterialTheme.typography.titleMedium.copy(
+                                        fontSize = 18.sp,
+                                        fontWeight = FontWeight.Bold
+                                    ),
+                                    color = primary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = "Work Hours Spent",
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 11.sp),
+                                    color = Color(0xFF7B8399),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+
+                    if (impulseResistedTotal > 0.0) {
+                        SurfaceCard(modifier = Modifier.weight(1f)) {
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Text(
+                                    text = "IMPULSE RESISTED",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                    color = Color(0xFF8B93A7),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = formatMoney(impulseResistedTotal, currency.symbol, false, hideBalance),
+                                    style = MaterialTheme.typography.titleMedium.copy(
+                                        fontSize = 18.sp,
+                                        fontWeight = FontWeight.Bold
+                                    ),
+                                    color = Color(0xFF10B981),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = "$impulseResistedCount ${if (impulseResistedCount == 1) "Buy" else "Buys"} Defeated",
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 11.sp),
+                                    color = Color(0xFF7B8399),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Exclusive Monthly Spending Discipline Heatmap
+        item(key = "discipline_heatmap") {
+            val dailyPace = if (monthlyBudget > 0.0) {
+                monthlyBudget / max(1, analytics.monthDaySpends.size)
+            } else {
+                max(1.0, analytics.dailyAverage)
+            }
+            val zeroSpendDaysCount = analytics.monthDaySpends
+                .take(analytics.currentDayOfMonth)
+                .count { it <= 0.0 }
+
+            SurfaceCard {
+                Column(modifier = Modifier.padding(18.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Monthly Discipline Heatmap",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = Color.White,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = "${formatMonthYearLabel(0)} • $zeroSpendDaysCount Zero-Spend Days",
+                                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 11.5.sp),
+                                color = Color(0xFF8B93A7),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        if (selectedHeatmapDay in 1..analytics.monthDaySpends.size) {
+                            val spendVal = analytics.monthDaySpends[selectedHeatmapDay - 1]
+                            Text(
+                                text = "Day $selectedHeatmapDay: ${formatMoney(spendVal, currency.symbol, false, hideBalance)}",
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.5.sp),
+                                color = primary,
+                                maxLines = 1
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    val rows = analytics.monthDaySpends.chunked(7)
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        rows.forEachIndexed { rowIdx, weekDays ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                for (col in 0 until 7) {
+                                    val dayNumber = rowIdx * 7 + col + 1
+                                    if (col < weekDays.size) {
+                                        val amount = weekDays[col]
+                                        val isFuture = dayNumber > analytics.currentDayOfMonth
+                                        val isSelected = selectedHeatmapDay == dayNumber
+                                        val cellColor = when {
+                                            isFuture -> Color(0xFF151822)
+                                            amount <= 0.0 -> Color(0xFF10B981).copy(alpha = 0.28f)
+                                            amount <= dailyPace -> primary.copy(alpha = 0.30f)
+                                            amount <= dailyPace * 1.75 -> Color(0xFFF59E0B).copy(alpha = 0.42f)
+                                            else -> Color(0xFFF43F5E).copy(alpha = 0.52f)
+                                        }
+                                        val borderColor = when {
+                                            isSelected -> Color.White
+                                            dayNumber == analytics.currentDayOfMonth -> primary
+                                            else -> Color.White.copy(alpha = 0.06f)
+                                        }
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .height(30.dp)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(cellColor)
+                                                .border(
+                                                    width = if (isSelected || dayNumber == analytics.currentDayOfMonth) 1.dp else 0.6.dp,
+                                                    color = borderColor,
+                                                    shape = RoundedCornerShape(8.dp)
+                                                )
+                                                .clickable(enabled = !isFuture) {
+                                                    onHaptic()
+                                                    selectedHeatmapDay = if (isSelected) -1 else dayNumber
+                                                },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = dayNumber.toString(),
+                                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                                color = if (isFuture) Color(0xFF4B5266) else Color.White
+                                            )
+                                        }
+                                    } else {
+                                        Spacer(modifier = Modifier.weight(1f))
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Emerald: Zero", style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.5.sp), color = Color(0xFF10B981))
+                        Text("Accent: On Pace", style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.5.sp), color = primary)
+                        Text("Amber: High", style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.5.sp), color = Color(0xFFF59E0B))
+                        Text("Rose: Peak", style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.5.sp), color = Color(0xFFF43F5E))
                     }
                 }
             }
@@ -3315,21 +5563,24 @@ private fun InsightsScreen(
                                     size = arcSize,
                                     style = Stroke(width = strokeW, cap = StrokeCap.Round)
                                 )
-                            } else {
+                            } else if (animProgress > 0.01f) {
                                 var startAngle = -90f
-                                val gap = if (analytics.categoryTotals.size > 1) 4f else 0f
+                                val multiSlice = analytics.categoryTotals.size > 1
+                                val gap = if (multiSlice) 3f else 0f
+                                val sliceCap = if (multiSlice) StrokeCap.Butt else StrokeCap.Round
                                 analytics.categoryTotals.forEach { (cat, value) ->
                                     val rawSweep = ((value / analytics.totalExpense) * 360.0).toFloat() * animProgress
-                                    val sweep = max(2f, rawSweep - gap)
+                                    val effectiveGap = if (multiSlice) min(gap, rawSweep * 0.35f) else 0f
+                                    val sweep = max(0.8f, rawSweep - effectiveGap)
                                     val dimmed = selectedCategory != null && selectedCategory != cat
                                     drawArc(
                                         color = if (dimmed) cat.color.copy(alpha = 0.22f) else cat.color,
-                                        startAngle = startAngle,
+                                        startAngle = startAngle + (effectiveGap / 2f),
                                         sweepAngle = sweep,
                                         useCenter = false,
                                         topLeft = Offset(inset, inset),
                                         size = arcSize,
-                                        style = Stroke(width = strokeW, cap = StrokeCap.Round)
+                                        style = Stroke(width = strokeW, cap = sliceCap)
                                     )
                                     startAngle += rawSweep
                                 }
@@ -3533,14 +5784,19 @@ private fun ComparisonBarRow(
 @Composable
 private fun GoalsScreen(
     goals: List<SavingsGoal>,
+    liquidBalance: Double,
+    impulseResistedTotal: Double,
+    impulseResistedCount: Int,
     currency: CurrencyOption,
     theme: AccentTheme,
     primary: Color,
     secondary: Color,
     hideBalance: Boolean,
+    animationsEnabled: Boolean,
     onAddGoal: () -> Unit,
     onEditGoal: (SavingsGoal) -> Unit,
     onDepositGoal: (SavingsGoal) -> Unit,
+    onWithdrawGoal: (SavingsGoal) -> Unit,
     onDeleteGoal: (SavingsGoal) -> Unit
 ) {
     val totals = remember(goals) {
@@ -3552,7 +5808,7 @@ private fun GoalsScreen(
 
     val animatedOverall by animateFloatAsState(
         targetValue = totals.third,
-        animationSpec = tween(420, easing = FastOutSlowInEasing),
+        animationSpec = if (animationsEnabled) tween(420, easing = FastOutSlowInEasing) else snap(),
         label = "goalsProgress"
     )
 
@@ -3569,14 +5825,14 @@ private fun GoalsScreen(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Savings Goals",
+                        text = "Goal Reserve Vault",
                         style = MaterialTheme.typography.headlineLarge,
                         color = Color.White,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = "Milestone tracking for your financial targets.",
+                        text = "Dedicated savings reserve separate from Liquid Balance.",
                         style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
                         color = Color(0xFF8B93A7),
                         maxLines = 1,
@@ -3627,7 +5883,7 @@ private fun GoalsScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "TOTAL RESERVED",
+                            text = "SAVINGS RESERVE VAULT",
                             style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.2.sp),
                             color = Color(0xFF9EA7BD),
                             modifier = Modifier.weight(1f),
@@ -3652,12 +5908,30 @@ private fun GoalsScreen(
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Combined Target: ${formatMoney(totals.second, currency.symbol, false, hideBalance)}",
-                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+                        text = "Combined Target: ${formatMoney(totals.second, currency.symbol, false, hideBalance)} • Liquid Vault: ${formatMoney(liquidBalance, currency.symbol, false, hideBalance)}",
+                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 11.5.sp),
                         color = Color(0xFF9EA7BD),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
+                    if (impulseResistedTotal > 0.0) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color(0xFF10B981).copy(alpha = 0.14f))
+                                .border(0.75.dp, Color(0xFF10B981).copy(alpha = 0.35f), RoundedCornerShape(8.dp))
+                                .padding(horizontal = 10.dp, vertical = 5.dp)
+                        ) {
+                            Text(
+                                text = "Impulse Resisted ($impulseResistedCount): ${formatMoney(impulseResistedTotal, currency.symbol, false, hideBalance)}",
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.5.sp),
+                                color = Color(0xFF10B981),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
                     Spacer(modifier = Modifier.height(14.dp))
                     Box(
                         modifier = Modifier
@@ -3695,7 +5969,7 @@ private fun GoalsScreen(
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "Tap Add Goal above to create your first savings milestone.",
+                            text = "Tap Add Goal above to create a dedicated milestone reserve separate from your Liquid Vault.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = Color(0xFF8B93A7),
                             textAlign = TextAlign.Center
@@ -3709,8 +5983,10 @@ private fun GoalsScreen(
                     goal = goal,
                     currency = currency,
                     hideBalance = hideBalance,
+                    animationsEnabled = animationsEnabled,
                     onEdit = { onEditGoal(goal) },
                     onDeposit = { onDepositGoal(goal) },
+                    onWithdraw = { onWithdrawGoal(goal) },
                     onDelete = { onDeleteGoal(goal) }
                 )
             }
@@ -3723,8 +5999,10 @@ private fun MilestoneGoalCard(
     goal: SavingsGoal,
     currency: CurrencyOption,
     hideBalance: Boolean,
+    animationsEnabled: Boolean,
     onEdit: () -> Unit,
     onDeposit: () -> Unit,
+    onWithdraw: () -> Unit,
     onDelete: () -> Unit
 ) {
     val accent = Color(goal.colorHex)
@@ -3736,7 +6014,7 @@ private fun MilestoneGoalCard(
     val remaining = max(0.0, goal.targetAmount - goal.savedAmount)
     val animatedRatio by animateFloatAsState(
         targetValue = ratio,
-        animationSpec = tween(380, easing = FastOutSlowInEasing),
+        animationSpec = if (animationsEnabled) tween(380, easing = FastOutSlowInEasing) else snap(),
         label = "goalBar_${goal.id}"
     )
 
@@ -3794,7 +6072,7 @@ private fun MilestoneGoalCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "${formatMoney(goal.savedAmount, currency.symbol, false, hideBalance)} / ${formatMoney(goal.targetAmount, currency.symbol, false, hideBalance)}",
+                    text = "${formatMoney(goal.savedAmount, currency.symbol, hasFractionalCents(goal.savedAmount), hideBalance)} / ${formatMoney(goal.targetAmount, currency.symbol, hasFractionalCents(goal.targetAmount), hideBalance)}",
                     style = MaterialTheme.typography.bodyMedium.copy(
                         fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold
@@ -3860,7 +6138,7 @@ private fun MilestoneGoalCard(
                         contentColor = accent
                     ),
                     border = BorderStroke(0.8.dp, accent.copy(alpha = 0.45f)),
-                    contentPadding = PaddingValues(vertical = 10.dp)
+                    contentPadding = PaddingValues(vertical = 10.dp, horizontal = 8.dp)
                 ) {
                     Text(
                         text = "Deposit",
@@ -3870,13 +6148,40 @@ private fun MilestoneGoalCard(
                 }
 
                 OutlinedButton(
-                    onClick = onEdit,
+                    onClick = onWithdraw,
+                    enabled = goal.savedAmount > 0.0,
+                    modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(0.8.dp, Color(0xFF262B38)),
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp)
+                    border = BorderStroke(
+                        0.8.dp,
+                        if (goal.savedAmount > 0.0) Color(0xFF2DD4BF).copy(alpha = 0.45f) else Color(0xFF222735)
+                    ),
+                    contentPadding = PaddingValues(vertical = 10.dp, horizontal = 8.dp)
                 ) {
                     Text(
-                        text = "Edit",
+                        text = "Withdraw",
+                        color = if (goal.savedAmount > 0.0) Color(0xFF2DD4BF) else Color(0xFF555D70),
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onEdit,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(0.8.dp, Color(0xFF262B38)),
+                    contentPadding = PaddingValues(vertical = 9.dp)
+                ) {
+                    Text(
+                        text = "Edit Goal",
                         color = Color.White,
                         maxLines = 1
                     )
@@ -3884,9 +6189,10 @@ private fun MilestoneGoalCard(
 
                 OutlinedButton(
                     onClick = onDelete,
+                    modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(12.dp),
                     border = BorderStroke(0.8.dp, Color(0xFF262B38)),
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp)
+                    contentPadding = PaddingValues(vertical = 9.dp)
                 ) {
                     Text(
                         text = "Delete",
@@ -3902,17 +6208,36 @@ private fun MilestoneGoalCard(
 @Composable
 private fun SettingsScreen(
     monthlyBudget: Double,
+    currentLiquidBalance: Double,
+    hourlyRate: Double,
     currency: CurrencyOption,
     activeTheme: AccentTheme,
     hapticsEnabled: Boolean,
     hideBalance: Boolean,
+    animationsEnabled: Boolean,
+    autoCheckUpdates: Boolean,
+    isCheckingUpdates: Boolean,
+    updateStatusText: String,
+    availableUpdate: AppUpdateInfo?,
+    devSettingsUnlocked: Boolean,
+    includePreReleases: Boolean,
     primary: Color,
     hasCrashReport: Boolean,
+    onSetBalance: () -> Unit,
     onEditBudget: () -> Unit,
+    onEditHourlyRate: () -> Unit,
     onSelectCurrency: (CurrencyOption) -> Unit,
     onSelectTheme: (AccentTheme) -> Unit,
+    onToggleAnimations: (Boolean) -> Unit,
     onToggleHaptics: (Boolean) -> Unit,
     onTogglePrivacy: (Boolean) -> Unit,
+    onToggleAutoCheckUpdates: (Boolean) -> Unit,
+    onCheckForUpdates: () -> Unit,
+    onOpenUpdateDialog: () -> Unit,
+    onToggleIncludePreReleases: (Boolean) -> Unit,
+    onReplaySetup: () -> Unit,
+    onHideDevSettings: () -> Unit,
+    onTapVersionSecret: () -> Unit,
     onExportBackupJson: () -> Unit,
     onOpenImportBackup: () -> Unit,
     onExportCsv: () -> Unit,
@@ -3934,7 +6259,7 @@ private fun SettingsScreen(
                     color = Color.White
                 )
                 Text(
-                    text = "Manage caps, themes, backups, diagnostics, and credits.",
+                    text = "Manage vaults, caps, themes, updates, backups, and diagnostics.",
                     style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
                     color = Color(0xFF8B93A7)
                 )
@@ -3943,10 +6268,60 @@ private fun SettingsScreen(
 
         item(key = "budget_setting") {
             Column {
-                SettingsSectionTitle("Budget & Currency")
+                SettingsSectionTitle("Vault, Budget & Currency")
                 Spacer(modifier = Modifier.height(8.dp))
                 SurfaceCard {
                     Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable(onClick = onSetBalance)
+                                .padding(16.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Liquid Vault Balance",
+                                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp),
+                                    color = Color.White
+                                )
+                                Text(
+                                    text = "Sync your exact spendable cash balance independently from Goals.",
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+                                    color = Color(0xFF8B93A7)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(primary.copy(alpha = 0.16f))
+                                    .border(0.75.dp, primary.copy(alpha = 0.45f), RoundedCornerShape(10.dp))
+                                    .padding(horizontal = 11.dp, vertical = 6.dp)
+                            ) {
+                                Text(
+                                    text = formatMoney(
+                                        currentLiquidBalance,
+                                        currency.symbol,
+                                        hasFractionalCents(currentLiquidBalance),
+                                        hideBalance
+                                    ),
+                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp),
+                                    color = primary,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp)
+                                .height(0.75.dp)
+                                .background(Color(0xFF1D212D))
+                        )
+
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -3977,12 +6352,66 @@ private fun SettingsScreen(
                             ) {
                                 Text(
                                     text = if (monthlyBudget > 0.0) {
-                                        formatMoney(monthlyBudget, currency.symbol, false)
+                                        formatMoney(
+                                            monthlyBudget,
+                                            currency.symbol,
+                                            hasFractionalCents(monthlyBudget),
+                                            hideBalance
+                                        )
                                     } else {
                                         "Not Set"
                                     },
                                     style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp),
                                     color = primary,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp)
+                                .height(0.75.dp)
+                                .background(Color(0xFF1D212D))
+                        )
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable(onClick = onEditHourlyRate)
+                                .padding(16.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Hourly Work Rate (Time-Cost)",
+                                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp),
+                                    color = Color.White
+                                )
+                                Text(
+                                    text = "Converts purchases into work hours in Simulator & Insights.",
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+                                    color = Color(0xFF8B93A7)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(Color(0xFF161922))
+                                    .border(0.75.dp, Color(0xFF282E3E), RoundedCornerShape(10.dp))
+                                    .padding(horizontal = 11.dp, vertical = 6.dp)
+                            ) {
+                                Text(
+                                    text = if (hourlyRate > 0.0) {
+                                        "${formatMoney(hourlyRate, currency.symbol, hasFractionalCents(hourlyRate), hideBalance)}/Hr"
+                                    } else {
+                                        "Off"
+                                    },
+                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.5.sp),
+                                    color = if (hourlyRate > 0.0) Color(0xFFF59E0B) else Color(0xFF8B93A7),
                                     maxLines = 1
                                 )
                             }
@@ -4073,6 +6502,77 @@ private fun SettingsScreen(
                                 )
                             }
                         }
+                    }
+                }
+            }
+        }
+
+        // GitHub Release Update Scanner
+        item(key = "app_updates") {
+            Column {
+                SettingsSectionTitle("App Updates")
+                Spacer(modifier = Modifier.height(8.dp))
+                SurfaceCard {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable(enabled = !isCheckingUpdates) {
+                                    if (availableUpdate != null) onOpenUpdateDialog() else onCheckForUpdates()
+                                }
+                                .padding(16.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Scan GitHub for Updates",
+                                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp),
+                                    color = Color.White
+                                )
+                                Text(
+                                    text = updateStatusText,
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+                                    color = if (availableUpdate != null) Color(0xFF10B981) else Color(0xFF8B93A7)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(primary.copy(alpha = 0.16f))
+                                    .border(0.75.dp, primary.copy(alpha = 0.45f), RoundedCornerShape(10.dp))
+                                    .clickable(enabled = !isCheckingUpdates, onClick = onCheckForUpdates)
+                                    .padding(horizontal = 11.dp, vertical = 6.dp)
+                            ) {
+                                Text(
+                                    text = if (isCheckingUpdates) "Scanning..." else "Check Now",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = primary,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp)
+                                .height(0.75.dp)
+                                .background(Color(0xFF1D212D))
+                        )
+
+                        SettingsToggleRow(
+                            title = "Auto-Check on Launch",
+                            subtitle = if (devSettingsUnlocked && includePreReleases) {
+                                "Checks GitHub Releases on launch (Pre-Release Channel Active)."
+                            } else {
+                                "Checks stable GitHub Releases only. Sends zero personal data."
+                            },
+                            checked = autoCheckUpdates,
+                            accent = primary,
+                            onCheckedChange = onToggleAutoCheckUpdates
+                        )
                     }
                 }
             }
@@ -4223,6 +6723,20 @@ private fun SettingsScreen(
                 SurfaceCard {
                     Column(modifier = Modifier.fillMaxWidth()) {
                         SettingsToggleRow(
+                            title = "Smooth Animations",
+                            subtitle = "Fluid chart reveals and transitions. Disable for instant zero-motion snaps.",
+                            checked = animationsEnabled,
+                            accent = primary,
+                            onCheckedChange = onToggleAnimations
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp)
+                                .height(0.75.dp)
+                                .background(Color(0xFF1D212D))
+                        )
+                        SettingsToggleRow(
                             title = "Privacy Masking",
                             subtitle = "Hide financial amounts across the application.",
                             checked = hideBalance,
@@ -4274,6 +6788,65 @@ private fun SettingsScreen(
             }
         }
 
+        // Secret Developer Settings (Unlocked via 7 Taps on Version)
+        if (devSettingsUnlocked) {
+            item(key = "developer_settings") {
+                Column {
+                    SettingsSectionTitle("Developer Settings")
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(Color(0xFF141219))
+                            .border(0.85.dp, Color(0xFFF59E0B).copy(alpha = 0.40f), RoundedCornerShape(20.dp))
+                    ) {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            SettingsToggleRow(
+                                title = "Include Pre-Release Updates",
+                                subtitle = "Allow the GitHub Update Scanner to detect beta and pre-release builds.",
+                                checked = includePreReleases,
+                                accent = Color(0xFFF59E0B),
+                                onCheckedChange = onToggleIncludePreReleases
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp)
+                                    .height(0.75.dp)
+                                    .background(Color(0xFF231F29))
+                            )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(14.dp),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                OutlinedButton(
+                                    onClick = onReplaySetup,
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(12.dp),
+                                    border = BorderStroke(0.8.dp, Color(0xFFF59E0B).copy(alpha = 0.45f)),
+                                    contentPadding = PaddingValues(vertical = 10.dp, horizontal = 8.dp)
+                                ) {
+                                    Text("Replay Setup", color = Color(0xFFF59E0B), maxLines = 1)
+                                }
+                                OutlinedButton(
+                                    onClick = onHideDevSettings,
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(12.dp),
+                                    border = BorderStroke(0.8.dp, Color(0xFF2E3342)),
+                                    contentPadding = PaddingValues(vertical = 10.dp, horizontal = 8.dp)
+                                ) {
+                                    Text("Lock Dev Menu", color = Color(0xFFB5BCD0), maxLines = 1)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Open-Source Credits & Version Registry Card
         item(key = "credits_section") {
             Column {
@@ -4292,12 +6865,13 @@ private fun SettingsScreen(
                             )
                         )
                         .border(0.85.dp, primary.copy(alpha = 0.32f), RoundedCornerShape(20.dp))
-                        .clickable(onClick = onOpenCredits)
                         .padding(18.dp)
                 ) {
                     Column {
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable(onClick = onTapVersionSecret),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             FinVaultBrandMark(
@@ -4322,7 +6896,7 @@ private fun SettingsScreen(
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
-                                    text = "FinVault v$APP_VERSION_NAME • $APP_BUILD_TRACK",
+                                    text = "$APP_BRAND_NAME v$APP_VERSION_NAME (Build $APP_VERSION_CODE) • $APP_BUILD_TRACK",
                                     style = MaterialTheme.typography.bodyMedium.copy(fontSize = 11.sp),
                                     color = Color(0xFF8B93A7),
                                     maxLines = 1,
@@ -4339,6 +6913,7 @@ private fun SettingsScreen(
                                 .clip(RoundedCornerShape(12.dp))
                                 .background(Color.Black.copy(alpha = 0.28f))
                                 .border(0.75.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
+                                .clickable(onClick = onOpenCredits)
                                 .padding(horizontal = 14.dp, vertical = 10.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
@@ -4554,7 +7129,7 @@ private fun ContactAndReportDialog(
     var attachDiagnostics by remember { mutableStateOf(true) }
 
     fun composeSubject(): String {
-        return "[FinVault v$APP_VERSION_NAME] ${reportType.title}"
+        return "[$APP_BRAND_NAME v$APP_VERSION_NAME] ${reportType.title}"
     }
 
     fun composeBody(): String {
@@ -4650,7 +7225,9 @@ private fun ContactAndReportDialog(
                     color = Color.White,
                     lineHeight = 19.sp
                 ),
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
             )
         }
 
@@ -4898,38 +7475,52 @@ private fun DiagnosticLogsDialog(
 private fun PurchaseImpactSimulatorDialog(
     transactions: List<TransactionItem>,
     goals: List<SavingsGoal>,
+    openingBalance: Double,
     monthlyBudget: Double,
+    hourlyRate: Double,
     currency: CurrencyOption,
     primary: Color,
     onDismiss: () -> Unit,
     onRecordPurchase: (String, Double, Category) -> Unit,
-    onSaveInstead: (Long, Double, String) -> Unit
+    onSaveInstead: (Long, Double, String) -> Unit,
+    onQuarantinePurchase: (String, Double, Category, Long?, Int) -> Unit
 ) {
-    val expenseCategories = remember { Category.entries.filter { !it.isIncomeCategory } }
+    val expenseCategories = remember {
+        Category.entries.filter { !it.isIncomeCategory && it != Category.GOAL_TRANSFER }
+    }
     var itemTitle by remember { mutableStateOf("") }
     var priceText by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf(Category.SHOPPING) }
     var selectedGoalId by remember { mutableStateOf(goals.firstOrNull()?.id) }
+    var quarantineHours by remember { mutableIntStateOf(72) }
 
     val totalIncome = remember(transactions) {
         transactions.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }
     }
-    val totalExpense = remember(transactions) {
+    val totalOutflow = remember(transactions) {
         transactions.filter { it.type == TransactionType.EXPENSE }.sumOf { it.amount }
     }
     val monthExpense = remember(transactions) {
         transactions
-            .filter { it.type == TransactionType.EXPENSE && isTimestampInCurrentMonth(it.timestamp) }
+            .filter {
+                it.type == TransactionType.EXPENSE &&
+                    it.category != Category.GOAL_TRANSFER &&
+                    isTimestampInCurrentMonth(it.timestamp)
+            }
             .sumOf { it.amount }
     }
 
-    val currentBalance = totalIncome - totalExpense
-    val price = priceText.toDoubleOrNull() ?: 0.0
+    val currentBalance = openingBalance + totalIncome - totalOutflow
+    val price = (priceText.toDoubleOrNull() ?: 0.0).let {
+        if (it.isFinite() && it >= 0.0) it.coerceAtMost(MAX_FINANCE_AMOUNT) else 0.0
+    }
+    val timeCostLabel = formatWorkHours(price, hourlyRate)
     val projectedBalance = currentBalance - price
     val daysLeft = daysRemainingInCurrentMonth()
     val hasBudget = monthlyBudget > 0.0
     val projectedMonthExpense = monthExpense + price
-    val projectedCapPct = if (hasBudget) ((projectedMonthExpense / monthlyBudget) * 100.0).roundToInt() else 0
+    val projectedCapRatio = if (hasBudget) projectedMonthExpense / monthlyBudget else 0.0
+    val projectedCapPctLabel = if (hasBudget) formatCompactPercent(projectedCapRatio) else "0%"
     val projectedDailySafe = if (hasBudget) max(0.0, (monthlyBudget - projectedMonthExpense) / daysLeft) else 0.0
 
     val verdictLabel: String
@@ -4958,8 +7549,8 @@ private fun PurchaseImpactSimulatorDialog(
     }
 
     val targetGoal = goals.firstOrNull { it.id == selectedGoalId } ?: goals.firstOrNull()
-    val goalImpactPct = if (targetGoal != null && targetGoal.targetAmount > 0.0 && price > 0.0) {
-        ((price / targetGoal.targetAmount) * 100.0).roundToInt()
+    val goalImpactPctLabel = if (targetGoal != null && targetGoal.targetAmount > 0.0 && price > 0.0) {
+        formatCompactPercent(price / targetGoal.targetAmount)
     } else {
         null
     }
@@ -4996,7 +7587,7 @@ private fun PurchaseImpactSimulatorDialog(
             placeholder = "0.00",
             accent = primary,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-            onValueChange = { input -> priceText = input.filter { it.isDigit() || it == '.' } }
+            onValueChange = { input -> priceText = sanitizeDecimalInput(input) }
         )
 
         Spacer(modifier = Modifier.height(10.dp))
@@ -5069,19 +7660,26 @@ private fun PurchaseImpactSimulatorDialog(
             if (hasBudget) {
                 CreditDetailRow(
                     label = "Projected Cap",
-                    value = "$projectedCapPct% Used",
-                    highlight = if (projectedCapPct > 100) Color(0xFFF43F5E) else primary
+                    value = "$projectedCapPctLabel Used",
+                    highlight = if (projectedCapRatio > 1.0) Color(0xFFF43F5E) else primary
                 )
                 CreditDetailRow(
                     label = "New Daily Limit",
                     value = "${formatMoney(projectedDailySafe, currency.symbol, false)} / Day"
                 )
             }
-            if (targetGoal != null && goalImpactPct != null) {
+            if (targetGoal != null && goalImpactPctLabel != null) {
                 CreditDetailRow(
                     label = "Goal Impact",
-                    value = "$goalImpactPct% of ${targetGoal.title}",
+                    value = "$goalImpactPctLabel of ${targetGoal.title}",
                     highlight = Color(targetGoal.colorHex)
+                )
+            }
+            if (timeCostLabel != null) {
+                CreditDetailRow(
+                    label = "Time-Cost",
+                    value = "$timeCostLabel of Work",
+                    highlight = Color(0xFFF59E0B)
                 )
             }
         }
@@ -5127,6 +7725,62 @@ private fun PurchaseImpactSimulatorDialog(
         }
 
         Spacer(modifier = Modifier.height(16.dp))
+
+        if (price > 0.0) {
+            Text(
+                text = "Cooling-Off Quarantine Duration",
+                style = MaterialTheme.typography.labelSmall,
+                color = Color(0xFF9EA7BD)
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                listOf(Pair(24, "24 Hours"), Pair(72, "72 Hours"), Pair(168, "7 Days")).forEach { (hrs, lbl) ->
+                    val active = quarantineHours == hrs
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (active) Color(0xFFF59E0B).copy(alpha = 0.20f) else Color(0xFF151822))
+                            .border(
+                                0.8.dp,
+                                if (active) Color(0xFFF59E0B) else Color(0xFF242937),
+                                RoundedCornerShape(10.dp)
+                            )
+                            .clickable { quarantineHours = hrs }
+                            .padding(vertical = 7.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = lbl,
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                            color = if (active) Color.White else Color(0xFF9EA7BD),
+                            maxLines = 1
+                        )
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+            OutlinedButton(
+                onClick = {
+                    val label = itemTitle.trim().ifEmpty { selectedCategory.title }
+                    onQuarantinePurchase(label, price, selectedCategory, targetGoal?.id, quarantineHours)
+                },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(0.85.dp, Color(0xFFF59E0B).copy(alpha = 0.50f))
+            ) {
+                Text(
+                    text = "Quarantine for ${if (quarantineHours == 168) "7 Days" else "${quarantineHours}h"}",
+                    color = Color(0xFFF59E0B),
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1
+                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+        }
 
         if (price > 0.0 && targetGoal != null) {
             Button(
@@ -5280,7 +7934,7 @@ private fun AddQuickPresetDialog(
             accent = primary,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
             onValueChange = { input ->
-                amountText = input.filter { it.isDigit() || it == '.' }
+                amountText = sanitizeDecimalInput(input)
                 errorMessage = null
             }
         )
@@ -5345,8 +7999,8 @@ private fun AddQuickPresetDialog(
                     val value = amountText.toDoubleOrNull()
                     if (titleText.isBlank()) {
                         errorMessage = "Please enter a preset name."
-                    } else if (value == null || value <= 0.0) {
-                        errorMessage = "Please enter a valid amount."
+                    } else if (value == null || !value.isFinite() || value <= 0.0 || value > MAX_FINANCE_AMOUNT) {
+                        errorMessage = "Please enter a valid amount greater than zero."
                     } else {
                         onSave(titleText.trim(), value, type, selectedCategory)
                     }
@@ -5370,18 +8024,58 @@ private fun ImportBackupDialog(
     onDismiss: () -> Unit,
     onImport: (BackupPayload) -> Unit
 ) {
+    val context = LocalContext.current
     var jsonText by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
+    val parsedPreview = remember(jsonText) {
+        if (jsonText.isBlank()) null else VaultStorage.parseFullBackupJson(jsonText)
+    }
+
     VaultDialogShell(onDismiss = onDismiss) {
-        Text(
-            text = "Restore JSON Backup",
-            style = MaterialTheme.typography.headlineMedium.copy(fontSize = 20.sp),
-            color = Color.White
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Restore JSON Backup",
+                style = MaterialTheme.typography.headlineMedium.copy(fontSize = 20.sp),
+                color = Color.White,
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "Paste",
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.5.sp),
+                color = primary,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(primary.copy(alpha = 0.16f))
+                    .border(0.75.dp, primary.copy(alpha = 0.45f), RoundedCornerShape(8.dp))
+                    .clickable {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        val clip = clipboard.primaryClip
+                        val pasted = if (clip != null && clip.itemCount > 0) {
+                            clip.getItemAt(0).coerceToText(context)?.toString().orEmpty()
+                        } else {
+                            ""
+                        }
+                        if (pasted.isBlank()) {
+                            errorMessage = "Clipboard is empty."
+                        } else {
+                            jsonText = pasted
+                            errorMessage = null
+                        }
+                    }
+                    .padding(horizontal = 10.dp, vertical = 5.dp)
+            )
+        }
         Spacer(modifier = Modifier.height(4.dp))
         Text(
-            text = "Paste a JSON backup previously exported from FinVault to restore your ledger and goals.",
+            text = "Paste a JSON backup previously exported from $APP_BRAND_NAME to restore your ledger and goals.",
             style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
             color = Color(0xFF8B93A7)
         )
@@ -5391,15 +8085,19 @@ private fun ImportBackupDialog(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(140.dp)
+                .height(148.dp)
                 .clip(RoundedCornerShape(12.dp))
                 .background(Color(0xFF161A24))
-                .border(0.85.dp, Color(0xFF282E3E), RoundedCornerShape(12.dp))
+                .border(
+                    0.85.dp,
+                    if (parsedPreview != null) Color(0xFF10B981).copy(alpha = 0.55f) else Color(0xFF282E3E),
+                    RoundedCornerShape(12.dp)
+                )
                 .padding(12.dp)
         ) {
             if (jsonText.isEmpty()) {
                 Text(
-                    text = "Paste FinVault JSON Backup Here...",
+                    text = "Paste $APP_BRAND_NAME JSON Backup Here...",
                     style = MaterialTheme.typography.bodyMedium.copy(
                         fontFamily = FontFamily.Monospace,
                         fontSize = 12.sp
@@ -5419,7 +8117,18 @@ private fun ImportBackupDialog(
                     fontSize = 12.sp,
                     color = Color.White
                 ),
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+            )
+        }
+
+        if (parsedPreview != null) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Verified $APP_BRAND_NAME Backup: ${parsedPreview.transactions.size} Entries, ${parsedPreview.goals.size} Goals, ${parsedPreview.presets.size} Presets (${parsedPreview.currency.code})",
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 11.5.sp),
+                color = Color(0xFF10B981)
             )
         }
 
@@ -5450,7 +8159,7 @@ private fun ImportBackupDialog(
                 onClick = {
                     val parsed = VaultStorage.parseFullBackupJson(jsonText)
                     if (parsed == null) {
-                        errorMessage = "Invalid FinVault JSON backup format."
+                        errorMessage = "Invalid $APP_BRAND_NAME JSON backup. Ensure it was exported from $APP_BRAND_NAME."
                     } else {
                         onImport(parsed)
                     }
@@ -5472,13 +8181,16 @@ private fun ImportBackupDialog(
 private fun CreditsAndLicenseDialog(
     primary: Color,
     secondary: Color,
+    onTapVersionSecret: () -> Unit,
     onOpenGitHub: () -> Unit,
     onCopyAttribution: () -> Unit,
     onDismiss: () -> Unit
 ) {
     VaultDialogShell(onDismiss = onDismiss) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onTapVersionSecret),
             verticalAlignment = Alignment.CenterVertically
         ) {
             FinVaultBrandMark(
@@ -5489,7 +8201,7 @@ private fun CreditsAndLicenseDialog(
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "FinVault v$APP_VERSION_NAME",
+                    text = "$APP_BRAND_NAME v$APP_VERSION_NAME",
                     style = MaterialTheme.typography.headlineMedium.copy(fontSize = 20.sp),
                     color = Color.White,
                     maxLines = 1,
@@ -5518,7 +8230,9 @@ private fun CreditsAndLicenseDialog(
         ) {
             CreditDetailRow(label = "Author", value = DEVELOPER_NAME, highlight = primary)
             CreditDetailRow(label = "Role", value = "Creator & Lead Developer")
-            CreditDetailRow(label = "Version", value = "v$APP_VERSION_NAME ($APP_BUILD_TRACK)")
+            Box(modifier = Modifier.fillMaxWidth().clickable(onClick = onTapVersionSecret)) {
+                CreditDetailRow(label = "Version", value = "v$APP_VERSION_NAME ($APP_BUILD_TRACK)")
+            }
             CreditDetailRow(label = "Stack", value = "Kotlin • Compose • Material 3")
             CreditDetailRow(label = "License", value = "MIT Open-Source License")
         }
@@ -5526,7 +8240,7 @@ private fun CreditsAndLicenseDialog(
         Spacer(modifier = Modifier.height(14.dp))
 
         Text(
-            text = "VERSION HISTORY (MAJOR & MINOR)",
+            text = "VERSION HISTORY",
             style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.0.sp),
             color = Color(0xFF8B93A7)
         )
@@ -5534,8 +8248,11 @@ private fun CreditsAndLicenseDialog(
 
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             ReleaseHistory.forEach { entry ->
-                val isMajor = entry.tier.contains("Major")
-                val badgeColor = if (isMajor) secondary else primary
+                val badgeColor = when {
+                    entry.tier.contains("Major") -> secondary
+                    entry.tier.contains("Patch") -> Color(0xFF10B981)
+                    else -> primary
+                }
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -5683,14 +8400,17 @@ private fun CreditDetailRow(
 private fun TransactionEditorDialog(
     existingItem: TransactionItem?,
     initialType: TransactionType,
+    goals: List<SavingsGoal>,
     currency: CurrencyOption,
     primary: Color,
     onDismiss: () -> Unit,
     onDelete: (() -> Unit)?,
     onDuplicate: (() -> Unit)?,
-    onSave: (String, Double, TransactionType, Category, String, Long) -> Unit
+    onSave: (String, Double, TransactionType, Category, String, Long, Long?) -> Unit
 ) {
-    var type by remember { mutableStateOf(existingItem?.type ?: initialType) }
+    var type by remember(existingItem?.id, initialType) {
+        mutableStateOf(existingItem?.type ?: initialType)
+    }
     val availableCategories = remember(type) {
         if (type == TransactionType.EXPENSE) {
             Category.entries.filter { !it.isIncomeCategory }
@@ -5698,7 +8418,7 @@ private fun TransactionEditorDialog(
             Category.entries.filter { it.isIncomeCategory }
         }
     }
-    var selectedCategory by remember(type) {
+    var selectedCategory by remember(existingItem?.id, type) {
         mutableStateOf(
             if (existingItem != null && existingItem.type == type) {
                 existingItem.category
@@ -5707,29 +8427,26 @@ private fun TransactionEditorDialog(
             }
         )
     }
-    var titleText by remember { mutableStateOf(existingItem?.title ?: "") }
-    var amountText by remember {
+    var selectedDepositGoalId by remember(existingItem?.id, type) { mutableStateOf<Long?>(null) }
+    var titleText by remember(existingItem?.id) { mutableStateOf(existingItem?.title ?: "") }
+    var amountText by remember(existingItem?.id) {
         mutableStateOf(
-            if (existingItem != null) {
-                if (existingItem.amount % 1.0 == 0.0) existingItem.amount.roundToInt().toString()
-                else existingItem.amount.toString()
-            } else {
-                ""
-            }
+            if (existingItem != null) formatEditableAmount(existingItem.amount) else ""
         )
     }
-    var noteText by remember { mutableStateOf(existingItem?.note ?: "") }
+    var noteText by remember(existingItem?.id) { mutableStateOf(existingItem?.note ?: "") }
     // Date selector: -1 = keep original (when editing), 0 = Today, 1 = Yesterday, 2 = 2 Days Ago
-    var datePreset by remember { mutableIntStateOf(if (existingItem != null) -1 else 0) }
+    var datePreset by remember(existingItem?.id) {
+        mutableIntStateOf(if (existingItem != null) -1 else 0)
+    }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
-    val resolvedTimestamp = remember(datePreset, existingItem) {
-        val dayMs = 24L * 60L * 60L * 1000L
+    val resolvedTimestamp = remember(datePreset, existingItem?.id) {
         when (datePreset) {
             -1 -> existingItem?.timestamp ?: System.currentTimeMillis()
             0 -> System.currentTimeMillis()
-            1 -> System.currentTimeMillis() - dayMs
-            else -> System.currentTimeMillis() - 2L * dayMs
+            1 -> calendarDaysAgo(1).timeInMillis
+            else -> calendarDaysAgo(2).timeInMillis
         }
     }
 
@@ -5737,6 +8454,7 @@ private fun TransactionEditorDialog(
         Text(
             text = when {
                 existingItem != null -> "Edit Transaction"
+                type == TransactionType.EXPENSE && selectedDepositGoalId != null -> "Deposit to Savings Goal"
                 type == TransactionType.EXPENSE -> "Record Expense"
                 else -> "Record Income"
             },
@@ -5805,10 +8523,107 @@ private fun TransactionEditorDialog(
             accent = primary,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
             onValueChange = { input ->
-                amountText = input.filter { it.isDigit() || it == '.' }
+                amountText = sanitizeDecimalInput(input)
                 errorMessage = null
             }
         )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            listOf(50, 100, 250, 500).forEach { stepAmount ->
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(9.dp))
+                        .background(Color(0xFF151822))
+                        .border(0.75.dp, Color(0xFF242937), RoundedCornerShape(9.dp))
+                        .clickable {
+                            val current = amountText.toDoubleOrNull() ?: 0.0
+                            amountText = formatEditableAmount((current + stepAmount).coerceAtMost(MAX_FINANCE_AMOUNT))
+                            errorMessage = null
+                        }
+                        .padding(vertical = 6.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "+${currency.symbol}$stepAmount",
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.5.sp),
+                        color = Color(0xFFC7CEDF),
+                        maxLines = 1
+                    )
+                }
+            }
+        }
+
+        if (existingItem == null && type == TransactionType.EXPENSE && goals.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = "Deposit to Savings Goal (Optional)",
+                style = MaterialTheme.typography.labelSmall,
+                color = Color(0xFF9EA7BD)
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                val noneActive = selectedDepositGoalId == null
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (noneActive) primary.copy(alpha = 0.18f) else Color(0xFF151822))
+                        .border(
+                            0.8.dp,
+                            if (noneActive) primary else Color(0xFF242937),
+                            RoundedCornerShape(10.dp)
+                        )
+                        .clickable { selectedDepositGoalId = null }
+                        .padding(horizontal = 10.dp, vertical = 7.dp)
+                ) {
+                    Text(
+                        text = "Regular Expense",
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                        color = if (noneActive) Color.White else Color(0xFF9EA7BD),
+                        maxLines = 1
+                    )
+                }
+                goals.forEach { goal ->
+                    val gAccent = Color(goal.colorHex)
+                    val active = selectedDepositGoalId == goal.id
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (active) gAccent.copy(alpha = 0.20f) else Color(0xFF151822))
+                            .border(
+                                0.85.dp,
+                                if (active) gAccent else Color(0xFF242937),
+                                RoundedCornerShape(10.dp)
+                            )
+                            .clickable {
+                                selectedDepositGoalId = goal.id
+                                selectedCategory = Category.GOAL_TRANSFER
+                                if (titleText.isBlank()) {
+                                    titleText = "Deposit to ${goal.title}"
+                                }
+                            }
+                            .padding(horizontal = 10.dp, vertical = 7.dp)
+                    ) {
+                        Text(
+                            text = "+ ${goal.title}",
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                            color = if (active) Color.White else gAccent,
+                            maxLines = 1
+                        )
+                    }
+                }
+            }
+        }
 
         Spacer(modifier = Modifier.height(12.dp))
 
@@ -5855,41 +8670,43 @@ private fun TransactionEditorDialog(
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        if (selectedDepositGoalId == null) {
+            Spacer(modifier = Modifier.height(12.dp))
 
-        Text(
-            text = "Category",
-            style = MaterialTheme.typography.labelSmall,
-            color = Color(0xFF9EA7BD)
-        )
-        Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Category",
+                style = MaterialTheme.typography.labelSmall,
+                color = Color(0xFF9EA7BD)
+            )
+            Spacer(modifier = Modifier.height(8.dp))
 
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            availableCategories.forEach { cat ->
-                val isSelected = selectedCategory == cat
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(if (isSelected) cat.color.copy(alpha = 0.20f) else Color(0xFF151822))
-                        .border(
-                            0.85.dp,
-                            if (isSelected) cat.color else Color(0xFF242937),
-                            RoundedCornerShape(10.dp)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                availableCategories.forEach { cat ->
+                    val isSelected = selectedCategory == cat
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (isSelected) cat.color.copy(alpha = 0.20f) else Color(0xFF151822))
+                            .border(
+                                0.85.dp,
+                                if (isSelected) cat.color else Color(0xFF242937),
+                                RoundedCornerShape(10.dp)
+                            )
+                            .clickable { selectedCategory = cat }
+                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                    ) {
+                        Text(
+                            text = cat.title,
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                            color = if (isSelected) Color.White else Color(0xFF9EA7BD),
+                            maxLines = 1
                         )
-                        .clickable { selectedCategory = cat }
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
-                ) {
-                    Text(
-                        text = cat.title,
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
-                        color = if (isSelected) Color.White else Color(0xFF9EA7BD),
-                        maxLines = 1
-                    )
+                    }
                 }
             }
         }
@@ -5933,7 +8750,7 @@ private fun TransactionEditorDialog(
                     val parsedAmount = amountText.toDoubleOrNull()
                     if (titleText.isBlank()) {
                         errorMessage = "Please enter a transaction title."
-                    } else if (parsedAmount == null || parsedAmount <= 0.0) {
+                    } else if (parsedAmount == null || !parsedAmount.isFinite() || parsedAmount <= 0.0 || parsedAmount > MAX_FINANCE_AMOUNT) {
                         errorMessage = "Please enter a valid amount greater than zero."
                     } else {
                         onSave(
@@ -5942,7 +8759,8 @@ private fun TransactionEditorDialog(
                             type,
                             selectedCategory,
                             noteText.trim(),
-                            resolvedTimestamp
+                            resolvedTimestamp,
+                            if (existingItem == null && type == TransactionType.EXPENSE) selectedDepositGoalId else null
                         )
                     }
                 },
@@ -5953,7 +8771,14 @@ private fun TransactionEditorDialog(
                     contentColor = Color(0xFF07080B)
                 )
             ) {
-                Text(if (existingItem != null) "Update" else "Save Entry", fontWeight = FontWeight.Bold)
+                Text(
+                    text = when {
+                        existingItem != null -> "Update"
+                        selectedDepositGoalId != null -> "Deposit"
+                        else -> "Save Entry"
+                    },
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
 
@@ -5999,14 +8824,18 @@ private fun GoalEditorDialog(
     onSave: (String, Double, Double, Long) -> Unit
 ) {
     val paletteColors = listOf(0xFF38BDF8L, 0xFF10B981L, 0xFF818CF8L, 0xFFF59E0BL, 0xFFFB7185L)
-    var titleText by remember { mutableStateOf(existingGoal?.title ?: "") }
-    var targetText by remember {
+    var titleText by remember(existingGoal?.id) { mutableStateOf(existingGoal?.title ?: "") }
+    var targetText by remember(existingGoal?.id) {
         mutableStateOf(
-            if (existingGoal != null) existingGoal.targetAmount.roundToInt().toString() else ""
+            if (existingGoal != null) formatEditableAmount(existingGoal.targetAmount) else ""
         )
     }
-    var initialText by remember { mutableStateOf("") }
-    var selectedColorHex by remember {
+    var savedText by remember(existingGoal?.id) {
+        mutableStateOf(
+            if (existingGoal != null) formatEditableAmount(existingGoal.savedAmount) else ""
+        )
+    }
+    var selectedColorHex by remember(existingGoal?.id) {
         mutableStateOf(existingGoal?.colorHex ?: paletteColors.first())
     }
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -6040,25 +8869,28 @@ private fun GoalEditorDialog(
             accent = primary,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
             onValueChange = { input ->
-                targetText = input.filter { it.isDigit() || it == '.' }
+                targetText = sanitizeDecimalInput(input)
                 errorMessage = null
             }
         )
 
-        if (existingGoal == null) {
-            Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
-            VaultTextField(
-                label = "Starting Deposit (${currency.symbol}, Optional)",
-                value = initialText,
-                placeholder = "0",
-                accent = primary,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                onValueChange = { input ->
-                    initialText = input.filter { it.isDigit() || it == '.' }
-                }
-            )
-        }
+        VaultTextField(
+            label = if (existingGoal != null) {
+                "Saved Amount (${currency.symbol})"
+            } else {
+                "Starting Deposit (${currency.symbol}, Optional)"
+            },
+            value = savedText,
+            placeholder = "0",
+            accent = primary,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            onValueChange = { input ->
+                savedText = sanitizeDecimalInput(input)
+                errorMessage = null
+            }
+        )
 
         Spacer(modifier = Modifier.height(14.dp))
 
@@ -6114,16 +8946,18 @@ private fun GoalEditorDialog(
             Button(
                 onClick = {
                     val target = targetText.toDoubleOrNull()
-                    val initial = initialText.toDoubleOrNull() ?: 0.0
+                    val parsedSaved = if (savedText.isBlank()) 0.0 else savedText.toDoubleOrNull()
                     if (titleText.isBlank()) {
                         errorMessage = "Please enter a name for your goal."
-                    } else if (target == null || target <= 0.0) {
-                        errorMessage = "Please enter a valid target amount."
+                    } else if (target == null || !target.isFinite() || target <= 0.0 || target > MAX_FINANCE_AMOUNT) {
+                        errorMessage = "Please enter a valid target amount greater than zero."
+                    } else if (parsedSaved == null || !parsedSaved.isFinite() || parsedSaved < 0.0 || parsedSaved > MAX_FINANCE_AMOUNT) {
+                        errorMessage = "Please enter a valid saved amount."
                     } else {
                         onSave(
                             titleText.trim(),
                             target,
-                            min(initial, target * 10.0),
+                            parsedSaved,
                             selectedColorHex
                         )
                     }
@@ -6144,12 +8978,15 @@ private fun GoalEditorDialog(
 @Composable
 private fun DepositGoalDialog(
     goal: SavingsGoal,
+    liquidBalance: Double,
     currency: CurrencyOption,
     primary: Color,
+    hideBalance: Boolean,
     onDismiss: () -> Unit,
-    onConfirm: (Double) -> Unit
+    onConfirm: (Double, Boolean) -> Unit
 ) {
-    var amountText by remember { mutableStateOf("") }
+    var amountText by remember(goal.id) { mutableStateOf("") }
+    var transferFromLiquid by remember(goal.id) { mutableStateOf(liquidBalance > 0.0) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     val accent = Color(goal.colorHex)
 
@@ -6161,7 +8998,7 @@ private fun DepositGoalDialog(
         )
         Spacer(modifier = Modifier.height(4.dp))
         Text(
-            text = "${goal.title} • Currently ${formatMoney(goal.savedAmount, currency.symbol, false)}",
+            text = "${goal.title} • Saved ${formatMoney(goal.savedAmount, currency.symbol, hasFractionalCents(goal.savedAmount), hideBalance)}",
             style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
             color = accent
         )
@@ -6205,10 +9042,51 @@ private fun DepositGoalDialog(
             accent = primary,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
             onValueChange = { input ->
-                amountText = input.filter { it.isDigit() || it == '.' }
+                amountText = sanitizeDecimalInput(input)
                 errorMessage = null
             }
         )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color(0xFF151822))
+                .border(0.75.dp, Color(0xFF232836), RoundedCornerShape(12.dp))
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Transfer from Liquid Vault",
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.SemiBold
+                    ),
+                    color = Color.White
+                )
+                Text(
+                    text = "Deducts from Liquid Balance (${formatMoney(liquidBalance, currency.symbol, false, hideBalance)}). Turn off for external savings.",
+                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 11.sp),
+                    color = Color(0xFF8B93A7)
+                )
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Switch(
+                checked = transferFromLiquid,
+                onCheckedChange = { transferFromLiquid = it },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color(0xFF07080B),
+                    checkedTrackColor = accent,
+                    uncheckedThumbColor = Color(0xFF9EA7BD),
+                    uncheckedTrackColor = Color(0xFF191D28),
+                    uncheckedBorderColor = Color(0xFF2C3242)
+                )
+            )
+        }
 
         errorMessage?.let { msg ->
             Spacer(modifier = Modifier.height(8.dp))
@@ -6236,10 +9114,10 @@ private fun DepositGoalDialog(
             Button(
                 onClick = {
                     val value = amountText.toDoubleOrNull()
-                    if (value == null || value <= 0.0) {
+                    if (value == null || !value.isFinite() || value <= 0.0 || value > MAX_FINANCE_AMOUNT) {
                         errorMessage = "Please enter a valid deposit amount."
                     } else {
-                        onConfirm(value)
+                        onConfirm(value, transferFromLiquid)
                     }
                 },
                 modifier = Modifier.weight(1f),
@@ -6256,40 +9134,317 @@ private fun DepositGoalDialog(
 }
 
 @Composable
-private fun EditBudgetDialog(
-    currentBudget: Double,
+private fun WithdrawGoalDialog(
+    goal: SavingsGoal,
+    currency: CurrencyOption,
+    primary: Color,
+    hideBalance: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: (Double, Boolean) -> Unit
+) {
+    var amountText by remember(goal.id) { mutableStateOf("") }
+    var returnToLiquid by remember(goal.id) { mutableStateOf(true) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    val tealAccent = Color(0xFF2DD4BF)
+
+    VaultDialogShell(onDismiss = onDismiss) {
+        Text(
+            text = "Withdraw from Goal",
+            style = MaterialTheme.typography.headlineMedium.copy(fontSize = 20.sp),
+            color = Color.White
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = "${goal.title} • Available ${formatMoney(goal.savedAmount, currency.symbol, hasFractionalCents(goal.savedAmount), hideBalance)}",
+            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
+            color = tealAccent
+        )
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            listOf(
+                Pair("25%", 0.25),
+                Pair("50%", 0.50),
+                Pair("All", 1.0)
+            ).forEach { (label, fraction) ->
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(tealAccent.copy(alpha = 0.14f))
+                        .border(0.8.dp, tealAccent.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
+                        .clickable {
+                            amountText = formatEditableAmount(goal.savedAmount * fraction)
+                            errorMessage = null
+                        }
+                        .padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.5.sp),
+                        color = tealAccent,
+                        maxLines = 1
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        VaultTextField(
+            label = "Withdraw Amount (${currency.symbol})",
+            value = amountText,
+            placeholder = "Enter amount",
+            accent = primary,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            onValueChange = { input ->
+                amountText = sanitizeDecimalInput(input)
+                errorMessage = null
+            }
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color(0xFF151822))
+                .border(0.75.dp, Color(0xFF232836), RoundedCornerShape(12.dp))
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Return to Liquid Vault",
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.SemiBold
+                    ),
+                    color = Color.White
+                )
+                Text(
+                    text = "Adds withdrawn amount back into your spendable Liquid Balance.",
+                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 11.sp),
+                    color = Color(0xFF8B93A7)
+                )
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Switch(
+                checked = returnToLiquid,
+                onCheckedChange = { returnToLiquid = it },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color(0xFF07080B),
+                    checkedTrackColor = tealAccent,
+                    uncheckedThumbColor = Color(0xFF9EA7BD),
+                    uncheckedTrackColor = Color(0xFF191D28),
+                    uncheckedBorderColor = Color(0xFF2C3242)
+                )
+            )
+        }
+
+        errorMessage?.let { msg ->
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = msg,
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+                color = Color(0xFFFB7185)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(18.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            OutlinedButton(
+                onClick = onDismiss,
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(0.85.dp, Color(0xFF2B3140))
+            ) {
+                Text("Cancel", color = Color(0xFFB5BCD0))
+            }
+            Button(
+                onClick = {
+                    val value = amountText.toDoubleOrNull()
+                    if (value == null || !value.isFinite() || value <= 0.0) {
+                        errorMessage = "Please enter a valid withdrawal amount."
+                    } else if (value > goal.savedAmount + 0.005) {
+                        errorMessage = "Amount exceeds this goal's saved reserve."
+                    } else {
+                        onConfirm(min(value, goal.savedAmount), returnToLiquid)
+                    }
+                },
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = tealAccent,
+                    contentColor = Color(0xFF07080B)
+                )
+            ) {
+                Text("Withdraw", fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SetBalanceDialog(
+    currentBalance: Double,
     currency: CurrencyOption,
     primary: Color,
     onDismiss: () -> Unit,
     onSave: (Double) -> Unit
 ) {
-    var budgetText by remember {
-        mutableStateOf(if (currentBudget > 0.0) currentBudget.roundToInt().toString() else "")
+    var isNegative by remember(currentBalance) { mutableStateOf(currentBalance < 0.0) }
+    var balanceText by remember(currentBalance) {
+        mutableStateOf(formatEditableAmount(abs(currentBalance)))
     }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
     VaultDialogShell(onDismiss = onDismiss) {
         Text(
-            text = "Monthly Spending Cap",
+            text = "Set Liquid Vault Balance",
             style = MaterialTheme.typography.headlineMedium.copy(fontSize = 20.sp),
             color = Color.White
         )
         Spacer(modifier = Modifier.height(6.dp))
         Text(
-            text = "Set your target spending limit for the month, or enter 0 to disable the cap.",
+            text = "Sync your exact spendable cash or e-wallet balance without altering your transaction history or Goal Reserve Vault.",
             style = MaterialTheme.typography.bodyMedium,
             color = Color(0xFF9EA7BD)
         )
         Spacer(modifier = Modifier.height(14.dp))
 
         VaultTextField(
-            label = "Monthly Cap (${currency.symbol})",
-            value = budgetText,
-            placeholder = "Example: 5000",
+            label = "Current Spendable Balance (${currency.symbol})",
+            value = balanceText,
+            placeholder = "0.00",
             accent = primary,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
             onValueChange = { input ->
-                budgetText = input.filter { it.isDigit() || it == '.' }
+                balanceText = sanitizeDecimalInput(input)
+                errorMessage = null
+            }
+        )
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(10.dp))
+                .background(Color(0xFF151822))
+                .padding(3.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            listOf(Pair(false, "Positive (+)"), Pair(true, "Deficit (-)")).forEach { (neg, label) ->
+                val active = isNegative == neg
+                val chipColor = if (neg) Color(0xFFF43F5E) else Color(0xFF10B981)
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (active) chipColor.copy(alpha = 0.18f) else Color.Transparent)
+                        .clickable { isNegative = neg }
+                        .padding(vertical = 7.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (active) chipColor else Color(0xFF8B93A7)
+                    )
+                }
+            }
+        }
+
+        errorMessage?.let { msg ->
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = msg,
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+                color = Color(0xFFFB7185)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(18.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            OutlinedButton(
+                onClick = onDismiss,
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(0.85.dp, Color(0xFF2B3140))
+            ) {
+                Text("Cancel", color = Color(0xFFB5BCD0))
+            }
+            Button(
+                onClick = {
+                    val value = if (balanceText.isBlank()) 0.0 else balanceText.toDoubleOrNull()
+                    if (value == null || !value.isFinite() || value < 0.0 || value > MAX_FINANCE_AMOUNT) {
+                        errorMessage = "Please enter a valid balance amount."
+                    } else {
+                        onSave(if (isNegative && value > 0.0) -value else value)
+                    }
+                },
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = primary,
+                    contentColor = Color(0xFF07080B)
+                )
+            ) {
+                Text("Sync Balance", fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+@Composable
+private fun EditHourlyRateDialog(
+    currentRate: Double,
+    currency: CurrencyOption,
+    primary: Color,
+    onDismiss: () -> Unit,
+    onSave: (Double) -> Unit
+) {
+    var rateText by remember(currentRate) { mutableStateOf(formatEditableAmount(currentRate)) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    VaultDialogShell(onDismiss = onDismiss) {
+        Text(
+            text = "Hourly Work Rate",
+            style = MaterialTheme.typography.headlineMedium.copy(fontSize = 20.sp),
+            color = Color.White
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = "Powers $APP_BRAND_NAME's exclusive Time-Cost Converter—showing how many hours of work a purchase costs. Enter 0 to disable.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = Color(0xFF9EA7BD)
+        )
+        Spacer(modifier = Modifier.height(14.dp))
+
+        VaultTextField(
+            label = "Hourly Rate (${currency.symbol} / Hour)",
+            value = rateText,
+            placeholder = "Example: 150",
+            accent = primary,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            onValueChange = { input ->
+                rateText = sanitizeDecimalInput(input)
                 errorMessage = null
             }
         )
@@ -6319,8 +9474,199 @@ private fun EditBudgetDialog(
             }
             Button(
                 onClick = {
-                    val value = budgetText.toDoubleOrNull()
-                    if (value == null || value < 0.0) {
+                    val value = if (rateText.isBlank()) 0.0 else rateText.toDoubleOrNull()
+                    if (value == null || !value.isFinite() || value < 0.0 || value > MAX_FINANCE_AMOUNT) {
+                        errorMessage = "Please enter 0 or a valid hourly rate."
+                    } else {
+                        onSave(value)
+                    }
+                },
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = primary,
+                    contentColor = Color(0xFF07080B)
+                )
+            ) {
+                Text("Save Rate", fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+@Composable
+private fun UpdateAvailableDialog(
+    update: AppUpdateInfo,
+    primary: Color,
+    onDownloadApk: (String) -> Unit,
+    onOpenReleasePage: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    VaultDialogShell(onDismiss = onDismiss) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Update Available",
+                style = MaterialTheme.typography.headlineMedium.copy(fontSize = 20.sp),
+                color = Color.White,
+                modifier = Modifier.weight(1f)
+            )
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(
+                        if (update.isPreRelease) Color(0xFFF59E0B).copy(alpha = 0.18f) else primary.copy(alpha = 0.18f)
+                    )
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            ) {
+                Text(
+                    text = if (update.isPreRelease) "Pre-Release" else "Stable",
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                    color = if (update.isPreRelease) Color(0xFFF59E0B) else primary
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = "${update.releaseName} (${update.tagName})${if (update.publishedAt.isNotBlank()) " • ${update.publishedAt}" else ""}",
+            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+            color = primary
+        )
+        Text(
+            text = "Installed: v$APP_VERSION_NAME (Build $APP_VERSION_CODE)",
+            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+            color = Color(0xFF8B93A7)
+        )
+
+        if (update.notes.isNotBlank()) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color(0xFF0B0D13))
+                    .border(0.75.dp, Color(0xFF202532), RoundedCornerShape(12.dp))
+                    .padding(12.dp)
+            ) {
+                Text(
+                    text = update.notes.take(1200),
+                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp, lineHeight = 17.sp),
+                    color = Color(0xFFC7CEDF)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        if (update.apkDownloadUrl != null) {
+            Button(
+                onClick = { onDownloadApk(update.apkDownloadUrl) },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = primary,
+                    contentColor = Color(0xFF07080B)
+                )
+            ) {
+                Text("Download APK", fontWeight = FontWeight.Bold)
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            OutlinedButton(
+                onClick = onDismiss,
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(0.85.dp, Color(0xFF2B3140))
+            ) {
+                Text("Later", color = Color(0xFFB5BCD0))
+            }
+            OutlinedButton(
+                onClick = { onOpenReleasePage(update.htmlUrl) },
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(0.85.dp, primary.copy(alpha = 0.45f))
+            ) {
+                Text("Open GitHub", color = primary, maxLines = 1)
+            }
+        }
+    }
+}
+
+@Composable
+private fun EditBudgetDialog(
+    currentBudget: Double,
+    currency: CurrencyOption,
+    primary: Color,
+    onDismiss: () -> Unit,
+    onSave: (Double) -> Unit
+) {
+    var budgetText by remember(currentBudget) {
+        mutableStateOf(formatEditableAmount(currentBudget))
+    }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    VaultDialogShell(onDismiss = onDismiss) {
+        Text(
+            text = "Monthly Spending Cap",
+            style = MaterialTheme.typography.headlineMedium.copy(fontSize = 20.sp),
+            color = Color.White
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = "Set your target spending limit for the month, or enter 0 to disable the cap.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = Color(0xFF9EA7BD)
+        )
+        Spacer(modifier = Modifier.height(14.dp))
+
+        VaultTextField(
+            label = "Monthly Cap (${currency.symbol})",
+            value = budgetText,
+            placeholder = "Example: 5000",
+            accent = primary,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            onValueChange = { input ->
+                budgetText = sanitizeDecimalInput(input)
+                errorMessage = null
+            }
+        )
+
+        errorMessage?.let { msg ->
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = msg,
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+                color = Color(0xFFFB7185)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(18.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            OutlinedButton(
+                onClick = onDismiss,
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(0.85.dp, Color(0xFF2B3140))
+            ) {
+                Text("Cancel", color = Color(0xFFB5BCD0))
+            }
+            Button(
+                onClick = {
+                    val value = if (budgetText.isBlank()) 0.0 else budgetText.toDoubleOrNull()
+                    if (value == null || !value.isFinite() || value < 0.0 || value > MAX_FINANCE_AMOUNT) {
                         errorMessage = "Please enter 0 or a valid positive limit."
                     } else {
                         onSave(value)
@@ -6340,19 +9686,22 @@ private fun EditBudgetDialog(
 }
 
 @Composable
-private fun ConfirmResetDialog(
+private fun ConfirmActionDialog(
+    title: String,
+    message: String,
+    confirmLabel: String,
     onDismiss: () -> Unit,
     onConfirm: () -> Unit
 ) {
     VaultDialogShell(onDismiss = onDismiss) {
         Text(
-            text = "Clear All Local Data?",
+            text = title,
             style = MaterialTheme.typography.headlineMedium.copy(fontSize = 20.sp),
             color = Color.White
         )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = "This action permanently removes all transactions, savings goals, quick presets, and your monthly cap from this device.",
+            text = message,
             style = MaterialTheme.typography.bodyMedium,
             color = Color(0xFF9EA7BD)
         )
@@ -6378,7 +9727,7 @@ private fun ConfirmResetDialog(
                     contentColor = Color.White
                 )
             ) {
-                Text("Clear Data", fontWeight = FontWeight.Bold)
+                Text(confirmLabel, fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -6391,19 +9740,31 @@ private fun VaultDialogShell(
 ) {
     Dialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
     ) {
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .clip(RoundedCornerShape(22.dp))
-                .background(Color(0xFF10131B))
-                .border(0.85.dp, Color(0xFF252A38), RoundedCornerShape(22.dp))
-                .verticalScroll(rememberScrollState())
-                .padding(20.dp)
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .imePadding()
+                .padding(horizontal = 20.dp, vertical = 16.dp),
+            contentAlignment = Alignment.Center
         ) {
-            content()
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(22.dp))
+                    .background(Color(0xFF10131B))
+                    .border(0.85.dp, Color(0xFF252A38), RoundedCornerShape(22.dp))
+                    .verticalScroll(rememberScrollState())
+                    .padding(20.dp)
+            ) {
+                content()
+            }
         }
     }
 }
