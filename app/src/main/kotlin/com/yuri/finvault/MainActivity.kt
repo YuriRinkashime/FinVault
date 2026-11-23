@@ -1,0 +1,6744 @@
+package com.yuri.finvault
+
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import android.graphics.Color as AndroidColor
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.Text
+import androidx.compose.material3.Typography
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableDoubleStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import kotlinx.coroutines.delay
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.PrintWriter
+import java.io.StringWriter
+import java.net.URLEncoder
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
+import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.roundToInt
+import kotlin.math.sin
+
+// ============================================================================
+// FinVault Release & Developer Configuration
+// Update these constants when bumping versions or customizing contact links.
+// ============================================================================
+private const val APP_VERSION_MAJOR = 2
+private const val APP_VERSION_MINOR = 2
+private const val APP_VERSION_PATCH = 0
+private const val APP_VERSION_CODE = 4
+private const val APP_VERSION_NAME = "$APP_VERSION_MAJOR.$APP_VERSION_MINOR.$APP_VERSION_PATCH"
+private const val APP_BUILD_TRACK = "Minor Release"
+
+private const val DEVELOPER_NAME = "Yuri Rinkashime"
+private const val GITHUB_REPO_URL = "https://github.com/YuriRinkashime/FinVault"
+private const val GITHUB_ISSUES_URL = "https://github.com/YuriRinkashime/FinVault/issues/new"
+private const val SUPPORT_EMAIL = "yuri.rinkashime@gmail.com"
+
+class MainActivity : ComponentActivity() {
+    @Suppress("DEPRECATION")
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        VaultDiagnostics.installCrashHandler(applicationContext)
+        VaultDiagnostics.log(applicationContext, "INFO", "Session started on v$APP_VERSION_NAME ($APP_VERSION_CODE)")
+
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.statusBarColor = AndroidColor.TRANSPARENT
+        window.navigationBarColor = AndroidColor.TRANSPARENT
+        val insetsController = WindowInsetsControllerCompat(window, window.decorView)
+        insetsController.isAppearanceLightStatusBars = false
+        insetsController.isAppearanceLightNavigationBars = false
+
+        setContent {
+            FinVaultApp()
+        }
+    }
+}
+
+private enum class TransactionType {
+    EXPENSE,
+    INCOME
+}
+
+private enum class Category(
+    val title: String,
+    val color: Color,
+    val isIncomeCategory: Boolean = false
+) {
+    FOOD("Food & Dining", Color(0xFFF59E0B)),
+    TRANSPORT("Transport", Color(0xFF38BDF8)),
+    BILLS("Bills & Data", Color(0xFFF43F5E)),
+    SHOPPING("Shopping", Color(0xFFC084FC)),
+    TECH("Tech & Gaming", Color(0xFF22D3EE)),
+    EDUCATION("School & Work", Color(0xFF34D399)),
+    OTHER("General", Color(0xFF94A3B8)),
+    ALLOWANCE("Allowance", Color(0xFF10B981), isIncomeCategory = true),
+    SALARY("Earnings", Color(0xFF14B8A6), isIncomeCategory = true),
+    GIFT("Bonus & Gift", Color(0xFF4ADE80), isIncomeCategory = true)
+}
+
+private enum class AccentTheme(
+    val title: String,
+    val primary: Color,
+    val secondary: Color,
+    val cardTop: Color,
+    val cardMid: Color,
+    val cardBottom: Color
+) {
+    TITANIUM_ICE(
+        title = "Titanium Ice",
+        primary = Color(0xFF38BDF8),
+        secondary = Color(0xFF818CF8),
+        cardTop = Color(0xFF162032),
+        cardMid = Color(0xFF101521),
+        cardBottom = Color(0xFF0C1018)
+    ),
+    JADE_SLATE(
+        title = "Jade Slate",
+        primary = Color(0xFF10B981),
+        secondary = Color(0xFF06B6D4),
+        cardTop = Color(0xFF102822),
+        cardMid = Color(0xFF0D1918),
+        cardBottom = Color(0xFF0A1113)
+    ),
+    COBALT_PULSE(
+        title = "Cobalt Pulse",
+        primary = Color(0xFF6366F1),
+        secondary = Color(0xFFA855F7),
+        cardTop = Color(0xFF1C1936),
+        cardMid = Color(0xFF131224),
+        cardBottom = Color(0xFF0D0D18)
+    ),
+    ROSE_QUARTZ(
+        title = "Rose Quartz",
+        primary = Color(0xFFFB7185),
+        secondary = Color(0xFFF59E0B),
+        cardTop = Color(0xFF2E161E),
+        cardMid = Color(0xFF1C1116),
+        cardBottom = Color(0xFF120C10)
+    )
+}
+
+private enum class CurrencyOption(val code: String, val symbol: String, val label: String) {
+    PHP("PHP", "₱", "Philippine Peso (₱)"),
+    USD("USD", "$", "US Dollar ($)"),
+    EUR("EUR", "€", "Euro (€)"),
+    GBP("GBP", "£", "British Pound (£)"),
+    JPY("JPY", "¥", "Japanese Yen (¥)")
+}
+
+private enum class SupportReportType(val title: String) {
+    BUG("Bug Report"),
+    FEATURE("Feature Request"),
+    FEEDBACK("General Feedback")
+}
+
+@Immutable
+private data class TransactionItem(
+    val id: Long,
+    val title: String,
+    val amount: Double,
+    val type: TransactionType,
+    val category: Category,
+    val timestamp: Long,
+    val note: String = ""
+)
+
+@Immutable
+private data class SavingsGoal(
+    val id: Long,
+    val title: String,
+    val targetAmount: Double,
+    val savedAmount: Double,
+    val colorHex: Long
+)
+
+@Immutable
+private data class QuickPreset(
+    val id: Long,
+    val title: String,
+    val amount: Double,
+    val type: TransactionType,
+    val category: Category
+)
+
+@Immutable
+private data class ReleaseNoteEntry(
+    val version: String,
+    val tier: String,
+    val summary: String
+)
+
+private val ReleaseHistory = listOf(
+    ReleaseNoteEntry(
+        version = "v2.2.0",
+        tier = "Minor Release",
+        summary = "Custom FinVault emblem & adaptive launcher icon, Month Navigator, Undo Delete banner, transaction date picker & duplicate tool, editable Savings Goals, No-Spend Streak insights, Developer Contact & Bug Report hub, and privacy-safe crash/diagnostic logging."
+    ),
+    ReleaseNoteEntry(
+        version = "v2.1.0",
+        tier = "Minor Upgrade",
+        summary = "Clean blank first boot, Purchase Impact Simulator with impulse-to-savings transfer, Safe-to-Spend daily allowance, Quick Presets, Vault Health Score, search filter, JSON/CSV export, and layout polish."
+    ),
+    ReleaseNoteEntry(
+        version = "v2.0.0",
+        tier = "Major Release",
+        summary = "Original Matte Titanium interface, LazyColumn 120Hz optimization, Privacy Masking, Insights trend curve, Milestone Goals, and open-source MIT credits."
+    ),
+    ReleaseNoteEntry(
+        version = "v1.0.0",
+        tier = "Major Release",
+        summary = "Initial offline budget ledger, expense categories, and local JSON persistence."
+    )
+)
+
+// ============================================================================
+// Privacy-Safe Diagnostic & Crash Logger
+// Never stores financial amounts, transaction titles, or personal notes.
+// ============================================================================
+private object VaultDiagnostics {
+    private const val PREFS_DIAG = "finvault_diagnostics_v1"
+    private const val KEY_LOGS = "event_logs"
+    private const val KEY_LAST_CRASH = "last_crash_trace"
+    private const val MAX_LOG_ENTRIES = 60
+    private var crashHandlerInstalled = false
+
+    fun installCrashHandler(context: Context) {
+        if (crashHandlerInstalled) return
+        crashHandlerInstalled = true
+        val appContext = context.applicationContext
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            try {
+                val sw = StringWriter()
+                throwable.printStackTrace(PrintWriter(sw))
+                val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
+                val crashText = "[$timestamp] Thread=${thread.name}\n${sw.toString().take(3500)}"
+                appContext.getSharedPreferences(PREFS_DIAG, Context.MODE_PRIVATE)
+                    .edit()
+                    .putString(KEY_LAST_CRASH, crashText)
+                    .commit()
+                log(appContext, "CRASH", "${throwable.javaClass.simpleName}: ${throwable.message ?: "Unhandled Error"}")
+            } catch (_: Exception) {
+                // Avoid secondary crash inside handler
+            } finally {
+                previous?.uncaughtException(thread, throwable)
+            }
+        }
+    }
+
+    fun log(context: Context, level: String, message: String) {
+        try {
+            val prefs = context.applicationContext.getSharedPreferences(PREFS_DIAG, Context.MODE_PRIVATE)
+            val existing = JSONArray(prefs.getString(KEY_LOGS, "[]") ?: "[]")
+            val time = SimpleDateFormat("MM-dd HH:mm:ss", Locale.US).format(Date())
+            val line = "[$time][$level] $message"
+            val updated = JSONArray()
+            val start = max(0, existing.length() - (MAX_LOG_ENTRIES - 1))
+            for (i in start until existing.length()) {
+                updated.put(existing.optString(i))
+            }
+            updated.put(line)
+            prefs.edit().putString(KEY_LOGS, updated.toString()).apply()
+        } catch (_: Exception) {
+            // Safe ignore
+        }
+    }
+
+    fun readLogs(context: Context): List<String> {
+        val prefs = context.applicationContext.getSharedPreferences(PREFS_DIAG, Context.MODE_PRIVATE)
+        val raw = prefs.getString(KEY_LOGS, "[]") ?: "[]"
+        val list = mutableListOf<String>()
+        try {
+            val arr = JSONArray(raw)
+            for (i in 0 until arr.length()) {
+                list.add(arr.optString(i))
+            }
+        } catch (_: Exception) {
+            return emptyList()
+        }
+        return list.reversed()
+    }
+
+    fun readLastCrash(context: Context): String? {
+        val prefs = context.applicationContext.getSharedPreferences(PREFS_DIAG, Context.MODE_PRIVATE)
+        val trace = prefs.getString(KEY_LAST_CRASH, null)
+        return if (trace.isNullOrBlank()) null else trace
+    }
+
+    fun clearAll(context: Context) {
+        context.applicationContext.getSharedPreferences(PREFS_DIAG, Context.MODE_PRIVATE)
+            .edit()
+            .remove(KEY_LOGS)
+            .remove(KEY_LAST_CRASH)
+            .apply()
+    }
+
+    fun buildDiagnosticBundle(
+        context: Context,
+        theme: AccentTheme,
+        currency: CurrencyOption,
+        txCount: Int,
+        goalCount: Int,
+        presetCount: Int,
+        hasMonthlyCap: Boolean
+    ): String {
+        val sb = StringBuilder()
+        sb.appendLine("=== FinVault Diagnostic Summary (Privacy-Safe) ===")
+        sb.appendLine("App Version: v$APP_VERSION_NAME (Build $APP_VERSION_CODE)")
+        sb.appendLine("Android Version: ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
+        sb.appendLine("Device: ${Build.MANUFACTURER} ${Build.MODEL}")
+        sb.appendLine("Active Theme: ${theme.title}")
+        sb.appendLine("Currency: ${currency.code}")
+        sb.appendLine("Records: $txCount Transactions, $goalCount Goals, $presetCount Presets")
+        sb.appendLine("Monthly Cap Configured: ${if (hasMonthlyCap) "Yes" else "No"}")
+        val crash = readLastCrash(context)
+        if (crash != null) {
+            sb.appendLine()
+            sb.appendLine("--- Last Captured Crash Trace ---")
+            sb.appendLine(crash)
+        }
+        val logs = readLogs(context).take(25)
+        if (logs.isNotEmpty()) {
+            sb.appendLine()
+            sb.appendLine("--- Recent Diagnostic Events (Newest First) ---")
+            logs.forEach { sb.appendLine(it) }
+        }
+        return sb.toString()
+    }
+}
+
+private object VaultStorage {
+    private const val PREFS_NAME = "finvault_storage_v2"
+    private const val KEY_TRANSACTIONS = "transactions"
+    private const val KEY_GOALS = "goals"
+    private const val KEY_PRESETS = "quick_presets"
+    private const val KEY_MONTHLY_BUDGET = "monthly_budget"
+    private const val KEY_CURRENCY = "currency"
+    private const val KEY_THEME = "accent_theme"
+    private const val KEY_HAPTICS = "haptics_enabled"
+    private const val KEY_HIDE_BALANCE = "hide_balance"
+
+    fun loadMonthlyBudget(context: Context): Double {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getFloat(KEY_MONTHLY_BUDGET, 0f)
+            .toDouble()
+    }
+
+    fun saveMonthlyBudget(context: Context, budget: Double) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putFloat(KEY_MONTHLY_BUDGET, budget.toFloat())
+            .apply()
+    }
+
+    fun loadCurrency(context: Context): CurrencyOption {
+        val code = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(KEY_CURRENCY, CurrencyOption.PHP.code)
+        return CurrencyOption.entries.firstOrNull { it.code == code } ?: CurrencyOption.PHP
+    }
+
+    fun saveCurrency(context: Context, currency: CurrencyOption) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_CURRENCY, currency.code)
+            .apply()
+    }
+
+    fun loadTheme(context: Context): AccentTheme {
+        val name = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(KEY_THEME, AccentTheme.TITANIUM_ICE.name)
+        return AccentTheme.entries.firstOrNull { it.name == name } ?: AccentTheme.TITANIUM_ICE
+    }
+
+    fun saveTheme(context: Context, theme: AccentTheme) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_THEME, theme.name)
+            .apply()
+    }
+
+    fun loadHaptics(context: Context): Boolean {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_HAPTICS, true)
+    }
+
+    fun saveHaptics(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_HAPTICS, enabled)
+            .apply()
+    }
+
+    fun loadHideBalance(context: Context): Boolean {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_HIDE_BALANCE, false)
+    }
+
+    fun saveHideBalance(context: Context, hidden: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_HIDE_BALANCE, hidden)
+            .apply()
+    }
+
+    fun loadTransactions(context: Context): List<TransactionItem> {
+        val raw = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(KEY_TRANSACTIONS, "[]") ?: "[]"
+        return parseTransactionsJson(raw)
+    }
+
+    fun saveTransactions(context: Context, items: List<TransactionItem>) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_TRANSACTIONS, serializeTransactionsJson(items).toString())
+            .apply()
+    }
+
+    fun loadGoals(context: Context): List<SavingsGoal> {
+        val raw = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(KEY_GOALS, "[]") ?: "[]"
+        return parseGoalsJson(raw)
+    }
+
+    fun saveGoals(context: Context, goals: List<SavingsGoal>) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_GOALS, serializeGoalsJson(goals).toString())
+            .apply()
+    }
+
+    fun loadPresets(context: Context): List<QuickPreset> {
+        val raw = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(KEY_PRESETS, "[]") ?: "[]"
+        return parsePresetsJson(raw)
+    }
+
+    fun savePresets(context: Context, presets: List<QuickPreset>) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_PRESETS, serializePresetsJson(presets).toString())
+            .apply()
+    }
+
+    fun exportFullBackupJson(
+        monthlyBudget: Double,
+        currency: CurrencyOption,
+        transactions: List<TransactionItem>,
+        goals: List<SavingsGoal>,
+        presets: List<QuickPreset>
+    ): String {
+        val root = JSONObject()
+        root.put("app", "FinVault")
+        root.put("version", APP_VERSION_NAME)
+        root.put("exportedAt", System.currentTimeMillis())
+        root.put("monthlyBudget", monthlyBudget)
+        root.put("currency", currency.code)
+        root.put("transactions", serializeTransactionsJson(transactions))
+        root.put("goals", serializeGoalsJson(goals))
+        root.put("presets", serializePresetsJson(presets))
+        return root.toString(2)
+    }
+
+    fun parseFullBackupJson(rawJson: String): BackupPayload? {
+        return try {
+            val root = JSONObject(rawJson.trim())
+            val budget = root.optDouble("monthlyBudget", 0.0).coerceAtLeast(0.0)
+            val currencyCode = root.optString("currency", CurrencyOption.PHP.code)
+            val currency = CurrencyOption.entries.firstOrNull { it.code == currencyCode }
+                ?: CurrencyOption.PHP
+            val txArray = root.optJSONArray("transactions") ?: JSONArray()
+            val goalArray = root.optJSONArray("goals") ?: JSONArray()
+            val presetArray = root.optJSONArray("presets") ?: JSONArray()
+            BackupPayload(
+                monthlyBudget = budget,
+                currency = currency,
+                transactions = parseTransactionsJson(txArray.toString()),
+                goals = parseGoalsJson(goalArray.toString()),
+                presets = parsePresetsJson(presetArray.toString())
+            )
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    fun exportCsvStatement(transactions: List<TransactionItem>, currency: CurrencyOption): String {
+        val sb = StringBuilder()
+        sb.appendLine("Date,Title,Type,Category,Amount (${currency.code}),Note")
+        val fmt = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US)
+        transactions.forEach { item ->
+            val safeTitle = item.title.replace("\"", "\"\"")
+            val safeNote = item.note.replace("\"", "\"\"")
+            val signed = if (item.type == TransactionType.EXPENSE) -item.amount else item.amount
+            sb.appendLine(
+                "\"${fmt.format(Date(item.timestamp))}\",\"$safeTitle\",\"${item.type.name}\",\"${item.category.title}\",${String.format(Locale.US, "%.2f", signed)},\"$safeNote\""
+            )
+        }
+        return sb.toString()
+    }
+
+    private fun serializeTransactionsJson(items: List<TransactionItem>): JSONArray {
+        val array = JSONArray()
+        items.forEach { item ->
+            val obj = JSONObject()
+            obj.put("id", item.id)
+            obj.put("title", item.title)
+            obj.put("amount", item.amount)
+            obj.put("type", item.type.name)
+            obj.put("category", item.category.name)
+            obj.put("timestamp", item.timestamp)
+            obj.put("note", item.note)
+            array.put(obj)
+        }
+        return array
+    }
+
+    private fun parseTransactionsJson(raw: String): List<TransactionItem> {
+        val result = mutableListOf<TransactionItem>()
+        try {
+            val array = JSONArray(raw)
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                val type = TransactionType.entries.firstOrNull {
+                    it.name == obj.optString("type")
+                } ?: TransactionType.EXPENSE
+                val category = Category.entries.firstOrNull {
+                    it.name == obj.optString("category")
+                } ?: Category.OTHER
+                result.add(
+                    TransactionItem(
+                        id = obj.optLong("id", System.currentTimeMillis() + i),
+                        title = obj.optString("title", "Untitled Entry"),
+                        amount = obj.optDouble("amount", 0.0),
+                        type = type,
+                        category = category,
+                        timestamp = obj.optLong("timestamp", System.currentTimeMillis()),
+                        note = obj.optString("note", "")
+                    )
+                )
+            }
+        } catch (_: Exception) {
+            return emptyList()
+        }
+        return result.sortedByDescending { it.timestamp }
+    }
+
+    private fun serializeGoalsJson(goals: List<SavingsGoal>): JSONArray {
+        val array = JSONArray()
+        goals.forEach { goal ->
+            val obj = JSONObject()
+            obj.put("id", goal.id)
+            obj.put("title", goal.title)
+            obj.put("targetAmount", goal.targetAmount)
+            obj.put("savedAmount", goal.savedAmount)
+            obj.put("colorHex", goal.colorHex)
+            array.put(obj)
+        }
+        return array
+    }
+
+    private fun parseGoalsJson(raw: String): List<SavingsGoal> {
+        val result = mutableListOf<SavingsGoal>()
+        try {
+            val array = JSONArray(raw)
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                result.add(
+                    SavingsGoal(
+                        id = obj.optLong("id", System.currentTimeMillis() + i),
+                        title = obj.optString("title", "Savings Target"),
+                        targetAmount = obj.optDouble("targetAmount", 1000.0),
+                        savedAmount = obj.optDouble("savedAmount", 0.0),
+                        colorHex = obj.optLong("colorHex", 0xFF38BDF8L)
+                    )
+                )
+            }
+        } catch (_: Exception) {
+            return emptyList()
+        }
+        return result
+    }
+
+    private fun serializePresetsJson(presets: List<QuickPreset>): JSONArray {
+        val array = JSONArray()
+        presets.forEach { preset ->
+            val obj = JSONObject()
+            obj.put("id", preset.id)
+            obj.put("title", preset.title)
+            obj.put("amount", preset.amount)
+            obj.put("type", preset.type.name)
+            obj.put("category", preset.category.name)
+            array.put(obj)
+        }
+        return array
+    }
+
+    private fun parsePresetsJson(raw: String): List<QuickPreset> {
+        val result = mutableListOf<QuickPreset>()
+        try {
+            val array = JSONArray(raw)
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                val type = TransactionType.entries.firstOrNull {
+                    it.name == obj.optString("type")
+                } ?: TransactionType.EXPENSE
+                val category = Category.entries.firstOrNull {
+                    it.name == obj.optString("category")
+                } ?: Category.OTHER
+                result.add(
+                    QuickPreset(
+                        id = obj.optLong("id", System.currentTimeMillis() + i),
+                        title = obj.optString("title", "Quick Preset"),
+                        amount = obj.optDouble("amount", 0.0),
+                        type = type,
+                        category = category
+                    )
+                )
+            }
+        } catch (_: Exception) {
+            return emptyList()
+        }
+        return result
+    }
+}
+
+private data class BackupPayload(
+    val monthlyBudget: Double,
+    val currency: CurrencyOption,
+    val transactions: List<TransactionItem>,
+    val goals: List<SavingsGoal>,
+    val presets: List<QuickPreset>
+)
+
+private fun formatMoney(
+    amount: Double,
+    symbol: String,
+    showDecimals: Boolean = true,
+    masked: Boolean = false
+): String {
+    if (masked) return "$symbol••••••"
+    val formatted = if (showDecimals) {
+        String.format(Locale.US, "%,.2f", abs(amount))
+    } else {
+        String.format(Locale.US, "%,.0f", abs(amount))
+    }
+    return if (amount < 0) "-$symbol$formatted" else "$symbol$formatted"
+}
+
+private fun formatDateLabel(timestamp: Long): String {
+    val formatter = SimpleDateFormat("MMM dd, yyyy", Locale.US)
+    return formatter.format(Date(timestamp))
+}
+
+private fun formatMonthYearLabel(monthOffset: Int): String {
+    val cal = Calendar.getInstance()
+    cal.set(Calendar.DAY_OF_MONTH, 1)
+    cal.add(Calendar.MONTH, monthOffset)
+    return SimpleDateFormat("MMMM yyyy", Locale.US).format(cal.time)
+}
+
+private fun isTimestampInMonthOffset(timestamp: Long, monthOffset: Int): Boolean {
+    val ref = Calendar.getInstance()
+    ref.set(Calendar.DAY_OF_MONTH, 1)
+    ref.add(Calendar.MONTH, monthOffset)
+    val target = Calendar.getInstance().apply { timeInMillis = timestamp }
+    return ref.get(Calendar.YEAR) == target.get(Calendar.YEAR) &&
+        ref.get(Calendar.MONTH) == target.get(Calendar.MONTH)
+}
+
+private fun daysRemainingInCurrentMonth(): Int {
+    val cal = Calendar.getInstance()
+    val maxDay = cal.getActualMaximum(Calendar.DAY_OF_MONTH)
+    val today = cal.get(Calendar.DAY_OF_MONTH)
+    return max(1, (maxDay - today) + 1)
+}
+
+private fun isTimestampInCurrentMonth(timestamp: Long): Boolean {
+    return isTimestampInMonthOffset(timestamp, 0)
+}
+
+private fun computeNoSpendStreakDays(transactions: List<TransactionItem>): Int {
+    val expenses = transactions.filter { it.type == TransactionType.EXPENSE }
+    if (expenses.isEmpty()) return 0
+    val keyFmt = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+    val expenseDays = expenses.map { keyFmt.format(Date(it.timestamp)) }.toSet()
+    val cal = Calendar.getInstance()
+    var streak = 0
+    for (offset in 0..365) {
+        val key = keyFmt.format(cal.time)
+        if (key in expenseDays) break
+        streak++
+        cal.add(Calendar.DAY_OF_YEAR, -1)
+    }
+    return streak
+}
+
+private fun openExternalUrl(context: Context, url: String) {
+    try {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+        context.startActivity(intent)
+    } catch (_: Exception) {
+        Toast.makeText(context, "Unable to Open Browser Link", Toast.LENGTH_SHORT).show()
+    }
+}
+
+private fun launchEmailReport(context: Context, subject: String, body: String) {
+    try {
+        val encodedSubject = Uri.encode(subject)
+        val encodedBody = Uri.encode(body)
+        val mailtoUri = Uri.parse("mailto:$SUPPORT_EMAIL?subject=$encodedSubject&body=$encodedBody")
+        val intent = Intent(Intent.ACTION_SENDTO, mailtoUri)
+        context.startActivity(Intent.createChooser(intent, "Send Report via Email"))
+    } catch (_: Exception) {
+        Toast.makeText(context, "No Email Application Found on Device", Toast.LENGTH_SHORT).show()
+    }
+}
+
+private fun sharePlainTextReport(context: Context, subject: String, body: String) {
+    try {
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, subject)
+            putExtra(Intent.EXTRA_TEXT, body)
+        }
+        context.startActivity(Intent.createChooser(intent, "Share Report & Diagnostic Logs"))
+    } catch (_: Exception) {
+        Toast.makeText(context, "Unable to Open Share Sheet", Toast.LENGTH_SHORT).show()
+    }
+}
+
+@Composable
+private fun FinVaultApp() {
+    val context = LocalContext.current
+    val haptics = LocalHapticFeedback.current
+
+    var selectedTab by remember { mutableIntStateOf(0) }
+    var activeTheme by remember { mutableStateOf(VaultStorage.loadTheme(context)) }
+    var currency by remember { mutableStateOf(VaultStorage.loadCurrency(context)) }
+    var monthlyBudget by remember { mutableDoubleStateOf(VaultStorage.loadMonthlyBudget(context)) }
+    var hapticsEnabled by remember { mutableStateOf(VaultStorage.loadHaptics(context)) }
+    var hideBalance by remember { mutableStateOf(VaultStorage.loadHideBalance(context)) }
+
+    val transactions = remember { mutableStateListOf<TransactionItem>() }
+    val goals = remember { mutableStateListOf<SavingsGoal>() }
+    val presets = remember { mutableStateListOf<QuickPreset>() }
+
+    var undoDeletedItem by remember { mutableStateOf<TransactionItem?>(null) }
+
+    var showAddTransactionDialog by remember { mutableStateOf(false) }
+    var editingTransaction by remember { mutableStateOf<TransactionItem?>(null) }
+    var initialTransactionType by remember { mutableStateOf(TransactionType.EXPENSE) }
+    var showGoalEditorDialog by remember { mutableStateOf(false) }
+    var editingGoal by remember { mutableStateOf<SavingsGoal?>(null) }
+    var activeDepositGoal by remember { mutableStateOf<SavingsGoal?>(null) }
+    var showEditBudgetDialog by remember { mutableStateOf(false) }
+    var showSimulatorDialog by remember { mutableStateOf(false) }
+    var showAddPresetDialog by remember { mutableStateOf(false) }
+    var showImportBackupDialog by remember { mutableStateOf(false) }
+    var showResetConfirmDialog by remember { mutableStateOf(false) }
+    var showCreditsDialog by remember { mutableStateOf(false) }
+    var showSupportDialog by remember { mutableStateOf(false) }
+    var showLogsViewerDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        val loadedTx = VaultStorage.loadTransactions(context)
+        val loadedGoals = VaultStorage.loadGoals(context)
+        val loadedPresets = VaultStorage.loadPresets(context)
+        transactions.addAll(loadedTx)
+        goals.addAll(loadedGoals)
+        presets.addAll(loadedPresets)
+        VaultDiagnostics.log(
+            context,
+            "STORAGE",
+            "Loaded ${loadedTx.size} entries, ${loadedGoals.size} goals, ${loadedPresets.size} presets"
+        )
+    }
+
+    LaunchedEffect(undoDeletedItem) {
+        if (undoDeletedItem != null) {
+            delay(5000L)
+            undoDeletedItem = null
+        }
+    }
+
+    fun persistTransactions() {
+        val sorted = transactions.sortedByDescending { it.timestamp }
+        transactions.clear()
+        transactions.addAll(sorted)
+        VaultStorage.saveTransactions(context, sorted)
+    }
+
+    fun persistGoals() {
+        VaultStorage.saveGoals(context, goals.toList())
+    }
+
+    fun persistPresets() {
+        VaultStorage.savePresets(context, presets.toList())
+    }
+
+    fun triggerHaptic(strong: Boolean = false) {
+        if (hapticsEnabled) {
+            haptics.performHapticFeedback(
+                if (strong) HapticFeedbackType.LongPress else HapticFeedbackType.TextHandleMove
+            )
+        }
+    }
+
+    fun copyToClipboard(label: String, text: String, toastMessage: String) {
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText(label, text))
+        Toast.makeText(context, toastMessage, Toast.LENGTH_SHORT).show()
+    }
+
+    val animatedPrimary by animateColorAsState(
+        targetValue = activeTheme.primary,
+        animationSpec = tween(300, easing = FastOutSlowInEasing),
+        label = "primaryColor"
+    )
+    val animatedSecondary by animateColorAsState(
+        targetValue = activeTheme.secondary,
+        animationSpec = tween(300, easing = FastOutSlowInEasing),
+        label = "secondaryColor"
+    )
+
+    val appColors = darkColorScheme(
+        primary = animatedPrimary,
+        onPrimary = Color(0xFF07080B),
+        secondary = animatedSecondary,
+        background = Color(0xFF07080B),
+        surface = Color(0xFF101218),
+        onBackground = Color(0xFFF4F6FB),
+        onSurface = Color(0xFFF4F6FB),
+        onSurfaceVariant = Color(0xFF8B93A7)
+    )
+
+    val appTypography = Typography(
+        headlineLarge = TextStyle(
+            fontFamily = FontFamily.SansSerif,
+            fontWeight = FontWeight.Bold,
+            fontSize = 27.sp,
+            letterSpacing = (-0.5).sp
+        ),
+        headlineMedium = TextStyle(
+            fontFamily = FontFamily.SansSerif,
+            fontWeight = FontWeight.Bold,
+            fontSize = 21.sp,
+            letterSpacing = (-0.3).sp
+        ),
+        titleMedium = TextStyle(
+            fontFamily = FontFamily.SansSerif,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 15.sp,
+            letterSpacing = (-0.1).sp
+        ),
+        bodyMedium = TextStyle(
+            fontFamily = FontFamily.SansSerif,
+            fontWeight = FontWeight.Normal,
+            fontSize = 13.5.sp,
+            lineHeight = 19.sp
+        ),
+        labelSmall = TextStyle(
+            fontFamily = FontFamily.SansSerif,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 11.sp,
+            letterSpacing = 0.5.sp
+        )
+    )
+
+    MaterialTheme(
+        colorScheme = appColors,
+        typography = appTypography
+    ) {
+        Scaffold(
+            containerColor = Color(0xFF07080B),
+            bottomBar = {
+                DockedBottomBar(
+                    selectedTab = selectedTab,
+                    accent = animatedPrimary,
+                    onSelectTab = { index ->
+                        triggerHaptic()
+                        selectedTab = index
+                    }
+                )
+            }
+        ) { innerPadding ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0xFF07080B))
+                    .statusBarsPadding()
+                    .padding(bottom = innerPadding.calculateBottomPadding())
+            ) {
+                AnimatedContent(
+                    targetState = selectedTab,
+                    transitionSpec = {
+                        fadeIn(tween(180)) togetherWith fadeOut(tween(120))
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                    label = "tabContent"
+                ) { tab ->
+                    when (tab) {
+                        0 -> VaultOverviewScreen(
+                            transactions = transactions.toList(),
+                            goals = goals.toList(),
+                            presets = presets.toList(),
+                            monthlyBudget = monthlyBudget,
+                            currency = currency,
+                            theme = activeTheme,
+                            primary = animatedPrimary,
+                            secondary = animatedSecondary,
+                            hideBalance = hideBalance,
+                            onTogglePrivacy = {
+                                triggerHaptic()
+                                hideBalance = !hideBalance
+                                VaultStorage.saveHideBalance(context, hideBalance)
+                            },
+                            onAddExpense = {
+                                triggerHaptic()
+                                editingTransaction = null
+                                initialTransactionType = TransactionType.EXPENSE
+                                showAddTransactionDialog = true
+                            },
+                            onAddIncome = {
+                                triggerHaptic()
+                                editingTransaction = null
+                                initialTransactionType = TransactionType.INCOME
+                                showAddTransactionDialog = true
+                            },
+                            onNewGoal = {
+                                triggerHaptic()
+                                editingGoal = null
+                                showGoalEditorDialog = true
+                            },
+                            onOpenSimulator = {
+                                triggerHaptic()
+                                showSimulatorDialog = true
+                            },
+                            onEditBudget = {
+                                triggerHaptic()
+                                showEditBudgetDialog = true
+                            },
+                            onAddPreset = {
+                                triggerHaptic()
+                                showAddPresetDialog = true
+                            },
+                            onTriggerPreset = { preset ->
+                                triggerHaptic(strong = true)
+                                val entry = TransactionItem(
+                                    id = System.currentTimeMillis(),
+                                    title = preset.title,
+                                    amount = preset.amount,
+                                    type = preset.type,
+                                    category = preset.category,
+                                    timestamp = System.currentTimeMillis(),
+                                    note = "Logged via Quick Preset"
+                                )
+                                transactions.add(0, entry)
+                                persistTransactions()
+                                VaultDiagnostics.log(context, "ACTION", "Logged entry via Quick Preset")
+                                Toast.makeText(
+                                    context,
+                                    "Recorded: ${preset.title}",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            },
+                            onDeletePreset = { preset ->
+                                triggerHaptic(strong = true)
+                                presets.removeAll { it.id == preset.id }
+                                persistPresets()
+                            },
+                            onEditTransaction = { item ->
+                                triggerHaptic()
+                                editingTransaction = item
+                                initialTransactionType = item.type
+                                showAddTransactionDialog = true
+                            },
+                            onDeleteTransaction = { item ->
+                                triggerHaptic(strong = true)
+                                undoDeletedItem = item
+                                transactions.removeAll { it.id == item.id }
+                                persistTransactions()
+                                VaultDiagnostics.log(context, "ACTION", "Removed transaction entry")
+                            }
+                        )
+
+                        1 -> InsightsScreen(
+                            transactions = transactions.toList(),
+                            goals = goals.toList(),
+                            currency = currency,
+                            primary = animatedPrimary,
+                            secondary = animatedSecondary,
+                            monthlyBudget = monthlyBudget,
+                            hideBalance = hideBalance,
+                            onHaptic = { triggerHaptic() }
+                        )
+
+                        2 -> GoalsScreen(
+                            goals = goals.toList(),
+                            currency = currency,
+                            theme = activeTheme,
+                            primary = animatedPrimary,
+                            secondary = animatedSecondary,
+                            hideBalance = hideBalance,
+                            onAddGoal = {
+                                triggerHaptic()
+                                editingGoal = null
+                                showGoalEditorDialog = true
+                            },
+                            onEditGoal = { goal ->
+                                triggerHaptic()
+                                editingGoal = goal
+                                showGoalEditorDialog = true
+                            },
+                            onDepositGoal = { goal ->
+                                triggerHaptic()
+                                activeDepositGoal = goal
+                            },
+                            onDeleteGoal = { goal ->
+                                triggerHaptic(strong = true)
+                                goals.removeAll { it.id == goal.id }
+                                persistGoals()
+                                VaultDiagnostics.log(context, "ACTION", "Deleted savings goal")
+                            }
+                        )
+
+                        else -> SettingsScreen(
+                            monthlyBudget = monthlyBudget,
+                            currency = currency,
+                            activeTheme = activeTheme,
+                            hapticsEnabled = hapticsEnabled,
+                            hideBalance = hideBalance,
+                            primary = animatedPrimary,
+                            hasCrashReport = VaultDiagnostics.readLastCrash(context) != null,
+                            onEditBudget = {
+                                triggerHaptic()
+                                showEditBudgetDialog = true
+                            },
+                            onSelectCurrency = { selected ->
+                                triggerHaptic()
+                                currency = selected
+                                VaultStorage.saveCurrency(context, selected)
+                                VaultDiagnostics.log(context, "PREF", "Currency changed to ${selected.code}")
+                            },
+                            onSelectTheme = { selected ->
+                                triggerHaptic()
+                                activeTheme = selected
+                                VaultStorage.saveTheme(context, selected)
+                                VaultDiagnostics.log(context, "PREF", "Theme changed to ${selected.title}")
+                            },
+                            onToggleHaptics = { enabled ->
+                                hapticsEnabled = enabled
+                                VaultStorage.saveHaptics(context, enabled)
+                                if (enabled) triggerHaptic()
+                            },
+                            onTogglePrivacy = { hidden ->
+                                triggerHaptic()
+                                hideBalance = hidden
+                                VaultStorage.saveHideBalance(context, hidden)
+                            },
+                            onExportBackupJson = {
+                                triggerHaptic()
+                                val json = VaultStorage.exportFullBackupJson(
+                                    monthlyBudget = monthlyBudget,
+                                    currency = currency,
+                                    transactions = transactions.toList(),
+                                    goals = goals.toList(),
+                                    presets = presets.toList()
+                                )
+                                VaultDiagnostics.log(context, "BACKUP", "Exported JSON backup")
+                                copyToClipboard(
+                                    label = "FinVault JSON Backup",
+                                    text = json,
+                                    toastMessage = "JSON Backup Copied to Clipboard"
+                                )
+                            },
+                            onOpenImportBackup = {
+                                triggerHaptic()
+                                showImportBackupDialog = true
+                            },
+                            onExportCsv = {
+                                triggerHaptic()
+                                if (transactions.isEmpty()) {
+                                    Toast.makeText(
+                                        context,
+                                        "No Transactions Available to Export",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                } else {
+                                    val csv = VaultStorage.exportCsvStatement(
+                                        transactions = transactions.toList(),
+                                        currency = currency
+                                    )
+                                    VaultDiagnostics.log(context, "EXPORT", "Exported CSV statement")
+                                    copyToClipboard(
+                                        label = "FinVault CSV Statement",
+                                        text = csv,
+                                        toastMessage = "CSV Statement Copied to Clipboard"
+                                    )
+                                }
+                            },
+                            onOpenSupportHub = {
+                                triggerHaptic()
+                                showSupportDialog = true
+                            },
+                            onOpenDiagnosticLogs = {
+                                triggerHaptic()
+                                showLogsViewerDialog = true
+                            },
+                            onOpenCredits = {
+                                triggerHaptic()
+                                showCreditsDialog = true
+                            },
+                            onRequestClearAll = {
+                                triggerHaptic()
+                                showResetConfirmDialog = true
+                            }
+                        )
+                    }
+                }
+
+                // Undo Delete Floating Banner
+                AnimatedVisibility(
+                    visible = undoDeletedItem != null,
+                    enter = fadeIn(tween(180)) + slideInVertically { it / 2 },
+                    exit = fadeOut(tween(180)) + slideOutVertically { it / 2 },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(horizontal = 18.dp, vertical = 14.dp)
+                ) {
+                    val deleted = undoDeletedItem
+                    if (deleted != null) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(Color(0xFF161B26))
+                                .border(0.85.dp, animatedPrimary.copy(alpha = 0.50f), RoundedCornerShape(14.dp))
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Removed \"${deleted.title}\"",
+                                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
+                                color = Color.White,
+                                modifier = Modifier.weight(1f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = "Undo",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                ),
+                                color = animatedPrimary,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(animatedPrimary.copy(alpha = 0.16f))
+                                    .clickable {
+                                        triggerHaptic()
+                                        transactions.add(0, deleted)
+                                        persistTransactions()
+                                        undoDeletedItem = null
+                                        VaultDiagnostics.log(context, "ACTION", "Restored deleted transaction")
+                                    }
+                                    .padding(horizontal = 10.dp, vertical = 5.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        if (showAddTransactionDialog) {
+            TransactionEditorDialog(
+                existingItem = editingTransaction,
+                initialType = initialTransactionType,
+                currency = currency,
+                primary = animatedPrimary,
+                onDismiss = {
+                    showAddTransactionDialog = false
+                    editingTransaction = null
+                },
+                onDelete = editingTransaction?.let { existing ->
+                    {
+                        triggerHaptic(strong = true)
+                        undoDeletedItem = existing
+                        transactions.removeAll { it.id == existing.id }
+                        persistTransactions()
+                        showAddTransactionDialog = false
+                        editingTransaction = null
+                    }
+                },
+                onDuplicate = editingTransaction?.let { existing ->
+                    {
+                        triggerHaptic(strong = true)
+                        val copy = existing.copy(
+                            id = System.currentTimeMillis(),
+                            timestamp = System.currentTimeMillis()
+                        )
+                        transactions.add(0, copy)
+                        persistTransactions()
+                        showAddTransactionDialog = false
+                        editingTransaction = null
+                        Toast.makeText(context, "Duplicated Entry for Today", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                onSave = { title, amount, type, category, note, timestamp ->
+                    triggerHaptic(strong = true)
+                    val existing = editingTransaction
+                    if (existing != null) {
+                        val idx = transactions.indexOfFirst { it.id == existing.id }
+                        if (idx >= 0) {
+                            transactions[idx] = existing.copy(
+                                title = title,
+                                amount = amount,
+                                type = type,
+                                category = category,
+                                timestamp = timestamp,
+                                note = note
+                            )
+                        }
+                        VaultDiagnostics.log(context, "ACTION", "Updated transaction entry")
+                    } else {
+                        val entry = TransactionItem(
+                            id = System.currentTimeMillis(),
+                            title = title,
+                            amount = amount,
+                            type = type,
+                            category = category,
+                            timestamp = timestamp,
+                            note = note
+                        )
+                        transactions.add(0, entry)
+                        VaultDiagnostics.log(context, "ACTION", "Created ${type.name} transaction")
+                    }
+                    persistTransactions()
+                    showAddTransactionDialog = false
+                    editingTransaction = null
+                }
+            )
+        }
+
+        if (showSimulatorDialog) {
+            PurchaseImpactSimulatorDialog(
+                transactions = transactions.toList(),
+                goals = goals.toList(),
+                monthlyBudget = monthlyBudget,
+                currency = currency,
+                primary = animatedPrimary,
+                onDismiss = { showSimulatorDialog = false },
+                onRecordPurchase = { itemTitle, amount, category ->
+                    triggerHaptic(strong = true)
+                    val entry = TransactionItem(
+                        id = System.currentTimeMillis(),
+                        title = itemTitle,
+                        amount = amount,
+                        type = TransactionType.EXPENSE,
+                        category = category,
+                        timestamp = System.currentTimeMillis(),
+                        note = "Approved via Purchase Simulator"
+                    )
+                    transactions.add(0, entry)
+                    persistTransactions()
+                    showSimulatorDialog = false
+                    Toast.makeText(context, "Purchase Recorded", Toast.LENGTH_SHORT).show()
+                },
+                onSaveInstead = { goalId, amount, itemTitle ->
+                    triggerHaptic(strong = true)
+                    val idx = goals.indexOfFirst { it.id == goalId }
+                    if (idx >= 0) {
+                        goals[idx] = goals[idx].copy(
+                            savedAmount = goals[idx].savedAmount + amount
+                        )
+                        persistGoals()
+                        VaultDiagnostics.log(context, "ACTION", "Transferred impulse savings to goal")
+                        Toast.makeText(
+                            context,
+                            "Saved ${formatMoney(amount, currency.symbol, false)} Instead of Buying $itemTitle!",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                    showSimulatorDialog = false
+                }
+            )
+        }
+
+        if (showAddPresetDialog) {
+            AddQuickPresetDialog(
+                currency = currency,
+                primary = animatedPrimary,
+                onDismiss = { showAddPresetDialog = false },
+                onSave = { title, amount, type, category ->
+                    triggerHaptic(strong = true)
+                    presets.add(
+                        QuickPreset(
+                            id = System.currentTimeMillis(),
+                            title = title,
+                            amount = amount,
+                            type = type,
+                            category = category
+                        )
+                    )
+                    persistPresets()
+                    showAddPresetDialog = false
+                }
+            )
+        }
+
+        if (showGoalEditorDialog) {
+            GoalEditorDialog(
+                existingGoal = editingGoal,
+                currency = currency,
+                primary = animatedPrimary,
+                onDismiss = {
+                    showGoalEditorDialog = false
+                    editingGoal = null
+                },
+                onSave = { title, target, initialSaved, colorHex ->
+                    triggerHaptic(strong = true)
+                    val existing = editingGoal
+                    if (existing != null) {
+                        val idx = goals.indexOfFirst { it.id == existing.id }
+                        if (idx >= 0) {
+                            goals[idx] = existing.copy(
+                                title = title,
+                                targetAmount = target,
+                                colorHex = colorHex
+                            )
+                        }
+                    } else {
+                        val goal = SavingsGoal(
+                            id = System.currentTimeMillis(),
+                            title = title,
+                            targetAmount = target,
+                            savedAmount = initialSaved,
+                            colorHex = colorHex
+                        )
+                        goals.add(goal)
+                    }
+                    persistGoals()
+                    showGoalEditorDialog = false
+                    editingGoal = null
+                }
+            )
+        }
+
+        activeDepositGoal?.let { goal ->
+            DepositGoalDialog(
+                goal = goal,
+                currency = currency,
+                primary = animatedPrimary,
+                onDismiss = { activeDepositGoal = null },
+                onConfirm = { depositAmount ->
+                    triggerHaptic(strong = true)
+                    val index = goals.indexOfFirst { it.id == goal.id }
+                    if (index >= 0) {
+                        val updated = goals[index].copy(
+                            savedAmount = goals[index].savedAmount + depositAmount
+                        )
+                        goals[index] = updated
+                        persistGoals()
+                    }
+                    activeDepositGoal = null
+                }
+            )
+        }
+
+        if (showEditBudgetDialog) {
+            EditBudgetDialog(
+                currentBudget = monthlyBudget,
+                currency = currency,
+                primary = animatedPrimary,
+                onDismiss = { showEditBudgetDialog = false },
+                onSave = { newBudget ->
+                    triggerHaptic(strong = true)
+                    monthlyBudget = newBudget
+                    VaultStorage.saveMonthlyBudget(context, newBudget)
+                    VaultDiagnostics.log(context, "PREF", "Monthly cap updated")
+                    showEditBudgetDialog = false
+                }
+            )
+        }
+
+        if (showImportBackupDialog) {
+            ImportBackupDialog(
+                primary = animatedPrimary,
+                onDismiss = { showImportBackupDialog = false },
+                onImport = { payload ->
+                    triggerHaptic(strong = true)
+                    monthlyBudget = payload.monthlyBudget
+                    currency = payload.currency
+                    transactions.clear()
+                    transactions.addAll(payload.transactions)
+                    goals.clear()
+                    goals.addAll(payload.goals)
+                    presets.clear()
+                    presets.addAll(payload.presets)
+                    VaultStorage.saveMonthlyBudget(context, monthlyBudget)
+                    VaultStorage.saveCurrency(context, currency)
+                    persistTransactions()
+                    persistGoals()
+                    persistPresets()
+                    VaultDiagnostics.log(context, "BACKUP", "Restored JSON backup successfully")
+                    showImportBackupDialog = false
+                    Toast.makeText(context, "Backup Restored Successfully", Toast.LENGTH_SHORT).show()
+                }
+            )
+        }
+
+        if (showSupportDialog) {
+            ContactAndReportDialog(
+                primary = animatedPrimary,
+                diagnosticBundle = VaultDiagnostics.buildDiagnosticBundle(
+                    context = context,
+                    theme = activeTheme,
+                    currency = currency,
+                    txCount = transactions.size,
+                    goalCount = goals.size,
+                    presetCount = presets.size,
+                    hasMonthlyCap = monthlyBudget > 0.0
+                ),
+                onSendEmail = { subject, body ->
+                    triggerHaptic()
+                    launchEmailReport(context, subject, body)
+                },
+                onOpenGitHubIssue = { title, body ->
+                    triggerHaptic()
+                    val encTitle = URLEncoder.encode(title, "UTF-8")
+                    val encBody = URLEncoder.encode(body.take(1800), "UTF-8")
+                    openExternalUrl(context, "$GITHUB_ISSUES_URL?title=$encTitle&body=$encBody")
+                },
+                onShareReport = { subject, body ->
+                    triggerHaptic()
+                    sharePlainTextReport(context, subject, body)
+                },
+                onCopyReport = { fullReport ->
+                    triggerHaptic()
+                    copyToClipboard(
+                        label = "FinVault Support Report",
+                        text = fullReport,
+                        toastMessage = "Report & Diagnostics Copied to Clipboard"
+                    )
+                },
+                onDismiss = { showSupportDialog = false }
+            )
+        }
+
+        if (showLogsViewerDialog) {
+            DiagnosticLogsDialog(
+                primary = animatedPrimary,
+                logs = VaultDiagnostics.readLogs(context),
+                lastCrash = VaultDiagnostics.readLastCrash(context),
+                onCopyBundle = {
+                    triggerHaptic()
+                    val bundle = VaultDiagnostics.buildDiagnosticBundle(
+                        context = context,
+                        theme = activeTheme,
+                        currency = currency,
+                        txCount = transactions.size,
+                        goalCount = goals.size,
+                        presetCount = presets.size,
+                        hasMonthlyCap = monthlyBudget > 0.0
+                    )
+                    copyToClipboard(
+                        label = "FinVault Diagnostic Logs",
+                        text = bundle,
+                        toastMessage = "Diagnostic Logs Copied to Clipboard"
+                    )
+                },
+                onClearLogs = {
+                    triggerHaptic(strong = true)
+                    VaultDiagnostics.clearAll(context)
+                    showLogsViewerDialog = false
+                    Toast.makeText(context, "Diagnostic Logs Cleared", Toast.LENGTH_SHORT).show()
+                },
+                onDismiss = { showLogsViewerDialog = false }
+            )
+        }
+
+        if (showResetConfirmDialog) {
+            ConfirmResetDialog(
+                onDismiss = { showResetConfirmDialog = false },
+                onConfirm = {
+                    triggerHaptic(strong = true)
+                    monthlyBudget = 0.0
+                    transactions.clear()
+                    goals.clear()
+                    presets.clear()
+                    VaultStorage.saveMonthlyBudget(context, 0.0)
+                    persistTransactions()
+                    persistGoals()
+                    persistPresets()
+                    VaultDiagnostics.log(context, "STORAGE", "Cleared all local financial records")
+                    showResetConfirmDialog = false
+                    Toast.makeText(context, "All Data Cleared", Toast.LENGTH_SHORT).show()
+                }
+            )
+        }
+
+        if (showCreditsDialog) {
+            CreditsAndLicenseDialog(
+                primary = animatedPrimary,
+                secondary = animatedSecondary,
+                onOpenGitHub = {
+                    triggerHaptic()
+                    openExternalUrl(context, GITHUB_REPO_URL)
+                },
+                onCopyAttribution = {
+                    triggerHaptic()
+                    copyToClipboard(
+                        label = "FinVault Attribution",
+                        text = "FinVault v$APP_VERSION_NAME — Open-Source Personal Budget & Savings Visualizer by $DEVELOPER_NAME ($GITHUB_REPO_URL, MIT License)",
+                        toastMessage = "Attribution Copied to Clipboard"
+                    )
+                },
+                onDismiss = { showCreditsDialog = false }
+            )
+        }
+    }
+}
+
+@Immutable
+private data class VaultSummary(
+    val totalIncome: Double,
+    val totalExpense: Double,
+    val monthExpense: Double,
+    val totalSaved: Double,
+    val netBalance: Double,
+    val budgetRatio: Float,
+    val budgetRemaining: Double,
+    val dailySafeToSpend: Double,
+    val daysLeftInMonth: Int,
+    val estimatedRunwayDays: Int?
+)
+
+@Composable
+private fun VaultOverviewScreen(
+    transactions: List<TransactionItem>,
+    goals: List<SavingsGoal>,
+    presets: List<QuickPreset>,
+    monthlyBudget: Double,
+    currency: CurrencyOption,
+    theme: AccentTheme,
+    primary: Color,
+    secondary: Color,
+    hideBalance: Boolean,
+    onTogglePrivacy: () -> Unit,
+    onAddExpense: () -> Unit,
+    onAddIncome: () -> Unit,
+    onNewGoal: () -> Unit,
+    onOpenSimulator: () -> Unit,
+    onEditBudget: () -> Unit,
+    onAddPreset: () -> Unit,
+    onTriggerPreset: (QuickPreset) -> Unit,
+    onDeletePreset: (QuickPreset) -> Unit,
+    onEditTransaction: (TransactionItem) -> Unit,
+    onDeleteTransaction: (TransactionItem) -> Unit
+) {
+    var filterMode by remember { mutableIntStateOf(0) }
+    var searchQuery by remember { mutableStateOf("") }
+    var monthOffset by remember { mutableIntStateOf(0) }
+    var allTimeScope by remember { mutableStateOf(false) }
+
+    val summary = remember(transactions, goals, monthlyBudget) {
+        val totalIncome = transactions.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }
+        val totalExpense = transactions.filter { it.type == TransactionType.EXPENSE }.sumOf { it.amount }
+        val monthExpense = transactions
+            .filter { it.type == TransactionType.EXPENSE && isTimestampInCurrentMonth(it.timestamp) }
+            .sumOf { it.amount }
+        val totalSaved = goals.sumOf { it.savedAmount }
+        val netBalance = totalIncome - totalExpense
+        val budgetRatio = if (monthlyBudget > 0.0) (monthExpense / monthlyBudget).toFloat() else 0f
+        val remaining = if (monthlyBudget > 0.0) monthlyBudget - monthExpense else 0.0
+        val daysLeft = daysRemainingInCurrentMonth()
+        val dailySafe = if (monthlyBudget > 0.0) max(0.0, remaining / daysLeft) else 0.0
+
+        val expenses = transactions.filter { it.type == TransactionType.EXPENSE }
+        val activeDays = max(1, expenses.map { formatDateLabel(it.timestamp) }.distinct().size)
+        val avgDailyBurn = if (expenses.isNotEmpty()) totalExpense / activeDays else 0.0
+        val runway = if (netBalance > 0.0 && avgDailyBurn > 0.0) {
+            min(999, (netBalance / avgDailyBurn).roundToInt())
+        } else {
+            null
+        }
+
+        VaultSummary(
+            totalIncome = totalIncome,
+            totalExpense = totalExpense,
+            monthExpense = monthExpense,
+            totalSaved = totalSaved,
+            netBalance = netBalance,
+            budgetRatio = budgetRatio,
+            budgetRemaining = remaining,
+            dailySafeToSpend = dailySafe,
+            daysLeftInMonth = daysLeft,
+            estimatedRunwayDays = runway
+        )
+    }
+
+    val filteredTransactions = remember(transactions, filterMode, searchQuery, monthOffset, allTimeScope) {
+        val byPeriod = if (allTimeScope) {
+            transactions
+        } else {
+            transactions.filter { isTimestampInMonthOffset(it.timestamp, monthOffset) }
+        }
+        val byType = when (filterMode) {
+            1 -> byPeriod.filter { it.type == TransactionType.EXPENSE }
+            2 -> byPeriod.filter { it.type == TransactionType.INCOME }
+            else -> byPeriod
+        }
+        val query = searchQuery.trim().lowercase(Locale.US)
+        if (query.isEmpty()) {
+            byType
+        } else {
+            byType.filter { item ->
+                item.title.lowercase(Locale.US).contains(query) ||
+                    item.category.title.lowercase(Locale.US).contains(query) ||
+                    item.note.lowercase(Locale.US).contains(query)
+            }
+        }
+    }
+
+    val animatedBurnRatio by animateFloatAsState(
+        targetValue = summary.budgetRatio.coerceIn(0f, 1f),
+        animationSpec = tween(400, easing = FastOutSlowInEasing),
+        label = "burnProgress"
+    )
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 14.dp, bottom = 28.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        // Branded Header Row
+        item(key = "header", contentType = "header") {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    FinVaultBrandMark(
+                        primary = primary,
+                        secondary = secondary,
+                        modifier = Modifier.size(38.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "FinVault",
+                            style = MaterialTheme.typography.headlineLarge.copy(fontSize = 24.sp),
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = "Personal Ledger & Savings",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+                            color = Color(0xFF8B93A7),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(10.dp))
+
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0xFF12151E))
+                        .border(0.75.dp, Color(0xFF232836), RoundedCornerShape(12.dp))
+                        .clickable(onClick = onTogglePrivacy),
+                    contentAlignment = Alignment.Center
+                ) {
+                    EyeGlyph(
+                        hidden = hideBalance,
+                        color = if (hideBalance) primary else Color(0xFF9EA7BD),
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+        }
+
+        // Signature Matte Titanium Ledger Card
+        item(key = "ledger_card", contentType = "hero") {
+            MatteLedgerCard(
+                summary = summary,
+                monthlyBudget = monthlyBudget,
+                burnRatio = animatedBurnRatio,
+                currency = currency,
+                theme = theme,
+                primary = primary,
+                secondary = secondary,
+                hideBalance = hideBalance,
+                onEditBudget = onEditBudget
+            )
+        }
+
+        // Cash Flow Split Cards
+        item(key = "cashflow_strip", contentType = "cashflow") {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                CashFlowMiniCard(
+                    title = "Total Income",
+                    amount = formatMoney(summary.totalIncome, currency.symbol, false, hideBalance),
+                    accent = Color(0xFF10B981),
+                    isUpward = true,
+                    modifier = Modifier.weight(1f)
+                )
+                CashFlowMiniCard(
+                    title = "Total Expenses",
+                    amount = formatMoney(summary.totalExpense, currency.symbol, false, hideBalance),
+                    accent = Color(0xFFF43F5E),
+                    isUpward = false,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+
+        // 4-Column Stacked Icon Action Grid
+        item(key = "action_grid", contentType = "actions") {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                StackedActionTile(
+                    label = "Expense",
+                    accent = Color(0xFFF43F5E),
+                    onClick = onAddExpense,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    ArrowDownGlyph(color = Color(0xFFF43F5E), modifier = Modifier.size(16.dp))
+                }
+                StackedActionTile(
+                    label = "Income",
+                    accent = Color(0xFF10B981),
+                    onClick = onAddIncome,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    ArrowUpGlyph(color = Color(0xFF10B981), modifier = Modifier.size(16.dp))
+                }
+                StackedActionTile(
+                    label = "Goal",
+                    accent = primary,
+                    onClick = onNewGoal,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    TargetGlyph(color = primary, modifier = Modifier.size(16.dp))
+                }
+                StackedActionTile(
+                    label = "Simulate",
+                    accent = secondary,
+                    onClick = onOpenSimulator,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    ScaleGlyph(color = secondary, modifier = Modifier.size(16.dp))
+                }
+            }
+        }
+
+        // Quick-Log Presets Strip
+        item(key = "quick_presets", contentType = "presets") {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Quick Presets",
+                        style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp),
+                        color = Color.White,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "+ Add Preset",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = primary,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable(onClick = onAddPreset)
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                if (presets.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(Color(0xFF101219))
+                            .border(0.75.dp, Color(0xFF1E222E), RoundedCornerShape(14.dp))
+                            .clickable(onClick = onAddPreset)
+                            .padding(horizontal = 14.dp, vertical = 12.dp)
+                    ) {
+                        Text(
+                            text = "Save frequent entries like Daily Commute or Weekly Allowance for one-tap logging.",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+                            color = Color(0xFF8B93A7)
+                        )
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        presets.forEach { preset ->
+                            val chipAccent = if (preset.type == TransactionType.EXPENSE) {
+                                Color(0xFFF43F5E)
+                            } else {
+                                Color(0xFF10B981)
+                            }
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(Color(0xFF11141C))
+                                    .border(0.75.dp, chipAccent.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
+                                    .clickable { onTriggerPreset(preset) }
+                                    .padding(start = 12.dp, end = 8.dp, top = 8.dp, bottom = 8.dp)
+                            ) {
+                                Column {
+                                    Text(
+                                        text = preset.title,
+                                        style = MaterialTheme.typography.bodyMedium.copy(
+                                            fontSize = 12.5.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        ),
+                                        color = Color.White,
+                                        maxLines = 1
+                                    )
+                                    Text(
+                                        text = formatMoney(preset.amount, currency.symbol, false, hideBalance),
+                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.5.sp),
+                                        color = chipAccent,
+                                        maxLines = 1
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .size(22.dp)
+                                        .clip(CircleShape)
+                                        .background(Color.White.copy(alpha = 0.06f))
+                                        .clickable { onDeletePreset(preset) },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    CloseGlyph(color = Color(0xFF8B93A7), modifier = Modifier.size(9.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Recent Activity + Month Navigator + Search + Filter
+        item(key = "activity_header", contentType = "activity_header") {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Recent Activity",
+                        style = MaterialTheme.typography.titleMedium.copy(fontSize = 16.sp),
+                        color = Color.White,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "${filteredTransactions.size} ${if (filteredTransactions.size == 1) "Entry" else "Entries"}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color(0xFF8B93A7)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Month Navigator Bar
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0xFF10131B))
+                        .border(0.75.dp, Color(0xFF202532), RoundedCornerShape(12.dp))
+                        .padding(horizontal = 6.dp, vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(30.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xFF171B26))
+                            .clickable {
+                                allTimeScope = false
+                                monthOffset -= 1
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        ChevronLeftGlyph(color = Color.White, modifier = Modifier.size(12.dp))
+                    }
+
+                    Text(
+                        text = if (allTimeScope) "All Time History" else formatMonthYearLabel(monthOffset),
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp),
+                        color = Color.White,
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable {
+                                if (allTimeScope) {
+                                    allTimeScope = false
+                                    monthOffset = 0
+                                } else {
+                                    allTimeScope = true
+                                }
+                            },
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(
+                                    if (allTimeScope) primary.copy(alpha = 0.20f) else Color(0xFF171B26)
+                                )
+                                .clickable { allTimeScope = !allTimeScope }
+                                .padding(horizontal = 9.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                text = if (allTimeScope) "Month" else "All",
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.5.sp),
+                                color = if (allTimeScope) primary else Color(0xFF9EA7BD),
+                                maxLines = 1
+                            )
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .size(30.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color(0xFF171B26))
+                                .clickable(enabled = allTimeScope || monthOffset < 0) {
+                                    if (allTimeScope) {
+                                        allTimeScope = false
+                                        monthOffset = 0
+                                    } else if (monthOffset < 0) {
+                                        monthOffset += 1
+                                    }
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            ChevronRightGlyph(
+                                color = if (allTimeScope || monthOffset < 0) Color.White else Color(0xFF4B5266),
+                                modifier = Modifier.size(12.dp)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Compact Live Search Field
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(42.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0xFF10131B))
+                        .border(0.75.dp, Color(0xFF202532), RoundedCornerShape(12.dp))
+                        .padding(horizontal = 12.dp)
+                ) {
+                    SearchGlyph(color = Color(0xFF7B8399), modifier = Modifier.size(15.dp))
+                    Spacer(modifier = Modifier.width(9.dp))
+                    Box(modifier = Modifier.weight(1f)) {
+                        if (searchQuery.isEmpty()) {
+                            Text(
+                                text = "Search Title, Category, or Note...",
+                                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
+                                color = Color(0xFF5D657A),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        BasicTextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            singleLine = true,
+                            cursorBrush = SolidColor(primary),
+                            textStyle = TextStyle(
+                                fontFamily = FontFamily.SansSerif,
+                                fontSize = 13.sp,
+                                color = Color.White
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    if (searchQuery.isNotEmpty()) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(22.dp)
+                                .clip(CircleShape)
+                                .background(Color.White.copy(alpha = 0.08f))
+                                .clickable { searchQuery = "" },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CloseGlyph(color = Color.White, modifier = Modifier.size(9.dp))
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                SegmentedFilterBar(
+                    options = listOf("All", "Expenses", "Income"),
+                    selectedIndex = filterMode,
+                    accent = primary,
+                    onSelect = { filterMode = it }
+                )
+            }
+        }
+
+        if (filteredTransactions.isEmpty()) {
+            item(key = "empty_state", contentType = "empty") {
+                SurfaceCard {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 28.dp, horizontal = 20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = if (transactions.isEmpty()) {
+                                "Your Ledger Is Ready"
+                            } else {
+                                "No Entries in This View"
+                            },
+                            style = MaterialTheme.typography.titleMedium,
+                            color = Color.White,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = if (transactions.isEmpty()) {
+                                "Start by recording an Income or Expense entry, or set your Monthly Cap on the card above."
+                            } else {
+                                "Try switching months, selecting All Time, or clearing your search filter."
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color(0xFF8B93A7),
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            }
+        } else {
+            items(
+                items = filteredTransactions,
+                key = { it.id },
+                contentType = { it.type }
+            ) { item ->
+                TransactionCardRow(
+                    item = item,
+                    currency = currency,
+                    hideBalance = hideBalance,
+                    onClick = { onEditTransaction(item) },
+                    onDelete = { onDeleteTransaction(item) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MatteLedgerCard(
+    summary: VaultSummary,
+    monthlyBudget: Double,
+    burnRatio: Float,
+    currency: CurrencyOption,
+    theme: AccentTheme,
+    primary: Color,
+    secondary: Color,
+    hideBalance: Boolean,
+    onEditBudget: () -> Unit
+) {
+    val hasBudget = monthlyBudget > 0.0
+    val percentUsed = if (hasBudget) (summary.budgetRatio * 100f).roundToInt() else 0
+    val statusColor = when {
+        !hasBudget -> primary
+        summary.budgetRatio >= 1.0f -> Color(0xFFF43F5E)
+        summary.budgetRatio >= 0.78f -> Color(0xFFF59E0B)
+        else -> Color(0xFF10B981)
+    }
+    val statusText = when {
+        !hasBudget -> "Set Cap"
+        summary.budgetRatio >= 1.0f -> "Over Cap"
+        summary.budgetRatio >= 0.78f -> "Near Limit"
+        else -> "Healthy"
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(24.dp))
+            .background(
+                Brush.linearGradient(
+                    colors = listOf(theme.cardTop, theme.cardMid, theme.cardBottom)
+                )
+            )
+            .border(
+                width = 0.85.dp,
+                brush = Brush.linearGradient(
+                    colors = listOf(
+                        primary.copy(alpha = 0.42f),
+                        Color.White.copy(alpha = 0.08f),
+                        secondary.copy(alpha = 0.28f)
+                    )
+                ),
+                shape = RoundedCornerShape(24.dp)
+            )
+    ) {
+        Canvas(modifier = Modifier.matchParentSize()) {
+            drawLine(
+                brush = Brush.linearGradient(
+                    listOf(Color.Transparent, Color.White.copy(alpha = 0.045f), Color.Transparent)
+                ),
+                start = Offset(size.width * 0.52f, 0f),
+                end = Offset(size.width * 0.96f, size.height),
+                strokeWidth = 60.dp.toPx()
+            )
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(primary.copy(alpha = 0.13f), Color.Transparent),
+                    center = Offset(size.width * 0.92f, size.height * 0.14f),
+                    radius = size.width * 0.48f
+                ),
+                radius = size.width * 0.48f,
+                center = Offset(size.width * 0.92f, size.height * 0.14f)
+            )
+        }
+
+        Column(modifier = Modifier.padding(18.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "NET LIQUID BALANCE",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontSize = 10.sp,
+                        letterSpacing = 1.3.sp
+                    ),
+                    color = Color(0xFF9EA7BD),
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(statusColor.copy(alpha = 0.15f))
+                        .border(0.75.dp, statusColor.copy(alpha = 0.42f), RoundedCornerShape(8.dp))
+                        .clickable(onClick = onEditBudget)
+                        .padding(horizontal = 9.dp, vertical = 4.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(statusColor)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = statusText,
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                        color = statusColor,
+                        maxLines = 1
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Text(
+                text = formatMoney(summary.netBalance, currency.symbol, true, hideBalance),
+                style = MaterialTheme.typography.headlineLarge.copy(
+                    fontSize = 33.sp,
+                    letterSpacing = (-1.0).sp
+                ),
+                color = Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Text(
+                text = "Vault Savings Reserved: ${formatMoney(summary.totalSaved, currency.symbol, false, hideBalance)}",
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+                color = Color(0xFF9EA7BD),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Safe-to-Spend & Cash Runway Strip
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Color.Black.copy(alpha = 0.30f))
+                    .border(0.75.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "SAFE TO SPEND TODAY",
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.5.sp),
+                        color = Color(0xFF8B93A7),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = if (hasBudget) {
+                            "${formatMoney(summary.dailySafeToSpend, currency.symbol, false, hideBalance)} / Day"
+                        } else {
+                            "Set Monthly Cap"
+                        },
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        ),
+                        color = primary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                Box(
+                    modifier = Modifier
+                        .padding(horizontal = 10.dp)
+                        .width(0.75.dp)
+                        .height(28.dp)
+                        .background(Color.White.copy(alpha = 0.10f))
+                )
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "CASH RUNWAY",
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.5.sp),
+                        color = Color(0xFF8B93A7),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = when {
+                            hideBalance -> "•••• Days"
+                            summary.estimatedRunwayDays != null -> "${summary.estimatedRunwayDays} Days Est."
+                            summary.netBalance > 0.0 -> "No Spend Pace"
+                            else -> "Awaiting Data"
+                        },
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        ),
+                        color = Color.White,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = if (hasBudget) {
+                        "Monthly Cap (${formatMoney(monthlyBudget, currency.symbol, false, hideBalance)})"
+                    } else {
+                        "No Monthly Cap Configured"
+                    },
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
+                    ),
+                    color = Color(0xFFC7CEDF),
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable(onClick = onEditBudget),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = if (hasBudget) "$percentUsed% Used" else "Tap to Set",
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                    color = primary,
+                    modifier = Modifier.clickable(onClick = onEditBudget),
+                    maxLines = 1
+                )
+            }
+
+            Spacer(modifier = Modifier.height(7.dp))
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(7.dp)
+                    .clip(CircleShape)
+                    .background(Color.White.copy(alpha = 0.09f))
+            ) {
+                if (hasBudget) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(burnRatio)
+                            .fillMaxHeight()
+                            .clip(CircleShape)
+                            .background(
+                                Brush.horizontalGradient(
+                                    listOf(
+                                        primary,
+                                        if (summary.budgetRatio >= 0.85f) Color(0xFFF43F5E) else secondary
+                                    )
+                                )
+                            )
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = when {
+                        !hasBudget -> "${summary.daysLeftInMonth} Days Remaining in Month"
+                        summary.budgetRemaining >= 0 ->
+                            "Left: ${formatMoney(summary.budgetRemaining, currency.symbol, false, hideBalance)} • ${summary.daysLeftInMonth}d Left"
+                        else ->
+                            "Exceeded By: ${formatMoney(abs(summary.budgetRemaining), currency.symbol, false, hideBalance)}"
+                    },
+                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 11.5.sp),
+                    color = if (hasBudget && summary.budgetRemaining < 0) Color(0xFFF43F5E) else Color(0xFF9EA7BD),
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Edit Cap",
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                    color = primary,
+                    modifier = Modifier.clickable(onClick = onEditBudget),
+                    maxLines = 1
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CashFlowMiniCard(
+    title: String,
+    amount: String,
+    accent: Color,
+    isUpward: Boolean,
+    modifier: Modifier = Modifier
+) {
+    SurfaceCard(modifier = modifier) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                    color = Color(0xFF8B93A7),
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                SparklineGlyph(
+                    color = accent,
+                    upward = isUpward,
+                    modifier = Modifier.size(width = 24.dp, height = 12.dp)
+                )
+            }
+            Spacer(modifier = Modifier.height(7.dp))
+            Text(
+                text = amount,
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold
+                ),
+                color = Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
+private fun StackedActionTile(
+    label: String,
+    accent: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    icon: @Composable () -> Unit
+) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color(0xFF11141C))
+            .border(0.75.dp, Color(0xFF232836), RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 12.dp, horizontal = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .size(32.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(accent.copy(alpha = 0.16f)),
+            contentAlignment = Alignment.Center
+        ) {
+            icon()
+        }
+        Spacer(modifier = Modifier.height(7.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 0.1.sp
+            ),
+            color = Color.White,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+@Composable
+private fun SegmentedFilterBar(
+    options: List<String>,
+    selectedIndex: Int,
+    accent: Color,
+    onSelect: (Int) -> Unit
+) {
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(40.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(Color(0xFF10131B))
+            .border(0.75.dp, Color(0xFF202532), RoundedCornerShape(12.dp))
+            .padding(3.dp)
+    ) {
+        val segmentWidth = maxWidth / options.size
+        val pillOffset by animateDpAsState(
+            targetValue = segmentWidth * selectedIndex,
+            animationSpec = tween(200, easing = FastOutSlowInEasing),
+            label = "filterPill"
+        )
+
+        Box(
+            modifier = Modifier
+                .offset(x = pillOffset)
+                .width(segmentWidth)
+                .fillMaxHeight()
+                .clip(RoundedCornerShape(9.dp))
+                .background(accent.copy(alpha = 0.18f))
+                .border(0.75.dp, accent.copy(alpha = 0.45f), RoundedCornerShape(9.dp))
+        )
+
+        Row(modifier = Modifier.fillMaxSize()) {
+            options.forEachIndexed { index, title ->
+                val isSelected = index == selectedIndex
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .clip(RoundedCornerShape(9.dp))
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) { onSelect(index) },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 12.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                        ),
+                        color = if (isSelected) Color.White else Color(0xFF8B93A7),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TransactionCardRow(
+    item: TransactionItem,
+    currency: CurrencyOption,
+    hideBalance: Boolean,
+    onClick: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val isExpense = item.type == TransactionType.EXPENSE
+    val amountColor = if (isExpense) Color(0xFFFB7185) else Color(0xFF10B981)
+    val signedAmount = if (hideBalance) {
+        "${currency.symbol}••••"
+    } else if (isExpense) {
+        "-${formatMoney(item.amount, currency.symbol)}"
+    } else {
+        "+${formatMoney(item.amount, currency.symbol)}"
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(Color(0xFF101219))
+            .border(0.75.dp, Color(0xFF1E222E), RoundedCornerShape(18.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 13.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .width(3.dp)
+                .height(34.dp)
+                .clip(CircleShape)
+                .background(item.category.color)
+        )
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = item.title,
+                style = MaterialTheme.typography.titleMedium.copy(fontSize = 14.5.sp),
+                color = Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = "${item.category.title} • ${formatDateLabel(item.timestamp)}",
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 11.5.sp),
+                color = Color(0xFF8B93A7),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (item.note.isNotBlank()) {
+                Text(
+                    text = item.note,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 11.sp),
+                    color = Color(0xFF666E82),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.width(10.dp))
+
+        Column(horizontalAlignment = Alignment.End) {
+            Text(
+                text = signedAmount,
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontSize = 14.5.sp,
+                    fontWeight = FontWeight.Bold
+                ),
+                color = amountColor,
+                maxLines = 1
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Remove",
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                color = Color(0xFF747C91),
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .clickable(onClick = onDelete)
+                    .padding(horizontal = 4.dp, vertical = 2.dp)
+            )
+        }
+    }
+}
+
+@Immutable
+private data class AnalyticsSnapshot(
+    val totalIncome: Double,
+    val totalExpense: Double,
+    val savingsRate: Int,
+    val dailyAverage: Double,
+    val noSpendStreak: Int,
+    val largestExpenseTitle: String?,
+    val largestExpenseAmount: Double,
+    val categoryTotals: List<Pair<Category, Double>>,
+    val sevenDayPoints: List<Pair<String, Double>>,
+    val healthScore: Int?,
+    val healthGrade: String,
+    val healthGuidance: String
+)
+
+@Composable
+private fun InsightsScreen(
+    transactions: List<TransactionItem>,
+    goals: List<SavingsGoal>,
+    currency: CurrencyOption,
+    primary: Color,
+    secondary: Color,
+    monthlyBudget: Double,
+    hideBalance: Boolean,
+    onHaptic: () -> Unit
+) {
+    val analytics = remember(transactions, goals, monthlyBudget) {
+        val expenses = transactions.filter { it.type == TransactionType.EXPENSE }
+        val totalIncome = transactions.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }
+        val totalExpense = expenses.sumOf { it.amount }
+        val monthExpense = expenses.filter { isTimestampInCurrentMonth(it.timestamp) }.sumOf { it.amount }
+
+        val largest = expenses.maxByOrNull { it.amount }
+        val streak = computeNoSpendStreakDays(transactions)
+
+        val categoryTotals = expenses
+            .groupBy { it.category }
+            .mapValues { (_, list) -> list.sumOf { it.amount } }
+            .entries
+            .sortedByDescending { it.value }
+            .map { Pair(it.key, it.value) }
+
+        val savingsRate = if (totalIncome > 0.0) {
+            (((totalIncome - totalExpense) / totalIncome) * 100.0).roundToInt().coerceIn(-100, 100)
+        } else {
+            0
+        }
+
+        val activeDays = max(1, expenses.map { formatDateLabel(it.timestamp) }.distinct().size)
+        val dailyAverage = if (expenses.isNotEmpty()) totalExpense / activeDays else 0.0
+
+        val cal = Calendar.getInstance()
+        val labelFmt = SimpleDateFormat("EEE", Locale.US)
+        val keyFmt = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+        val dailyMap = expenses.groupBy { keyFmt.format(Date(it.timestamp)) }
+            .mapValues { (_, items) -> items.sumOf { it.amount } }
+        val sevenDays = (6 downTo 0).map { daysAgo ->
+            cal.timeInMillis = System.currentTimeMillis() - daysAgo * 24L * 60L * 60L * 1000L
+            val key = keyFmt.format(cal.time)
+            Pair(labelFmt.format(cal.time), dailyMap[key] ?: 0.0)
+        }
+
+        val score: Int?
+        val grade: String
+        val guidance: String
+        if (transactions.isEmpty() && goals.isEmpty()) {
+            score = null
+            grade = "Awaiting Data"
+            guidance = "Record income, expenses, or savings goals to compute your live financial health score."
+        } else {
+            val savingsPts = when {
+                totalIncome <= 0.0 -> 15
+                savingsRate >= 30 -> 40
+                savingsRate >= 15 -> 32
+                savingsRate >= 0 -> 22
+                else -> 6
+            }
+            val budgetPts = when {
+                monthlyBudget <= 0.0 -> 20
+                monthExpense <= monthlyBudget * 0.75 -> 35
+                monthExpense <= monthlyBudget -> 26
+                monthExpense <= monthlyBudget * 1.15 -> 14
+                else -> 5
+            }
+            val totalTarget = goals.sumOf { it.targetAmount }
+            val totalSaved = goals.sumOf { it.savedAmount }
+            val goalRatio = if (totalTarget > 0.0) (totalSaved / totalTarget).coerceIn(0.0, 1.0) else 0.0
+            val goalPts = if (goals.isEmpty()) 10 else (10 + (goalRatio * 15.0).roundToInt())
+
+            val computed = (savingsPts + budgetPts + goalPts).coerceIn(0, 100)
+            score = computed
+            grade = when {
+                computed >= 85 -> "Excellent"
+                computed >= 70 -> "Strong"
+                computed >= 50 -> "Balanced"
+                else -> "Needs Attention"
+            }
+            guidance = when {
+                monthlyBudget <= 0.0 -> "Set a Monthly Cap on the Vault tab to unlock full budget discipline scoring."
+                monthExpense > monthlyBudget -> "Monthly expenses exceeded your cap. Consider running the Purchase Simulator before new buys."
+                savingsRate < 15 && totalIncome > 0.0 -> "Try moving at least 15% of new income into an active Savings Goal."
+                else -> "Your cash flow and spending pace are disciplined. Keep funding your active goals."
+            }
+        }
+
+        AnalyticsSnapshot(
+            totalIncome = totalIncome,
+            totalExpense = totalExpense,
+            savingsRate = savingsRate,
+            dailyAverage = dailyAverage,
+            noSpendStreak = streak,
+            largestExpenseTitle = largest?.title,
+            largestExpenseAmount = largest?.amount ?: 0.0,
+            categoryTotals = categoryTotals,
+            sevenDayPoints = sevenDays,
+            healthScore = score,
+            healthGrade = grade,
+            healthGuidance = guidance
+        )
+    }
+
+    var selectedCategory by remember { mutableStateOf<Category?>(null) }
+    var chartReady by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { chartReady = true }
+
+    val animProgress by animateFloatAsState(
+        targetValue = if (chartReady) 1f else 0f,
+        animationSpec = tween(480, easing = FastOutSlowInEasing),
+        label = "donutReveal"
+    )
+
+    val activeEntry = analytics.categoryTotals.firstOrNull { it.first == selectedCategory }
+    val centerLabel = activeEntry?.first?.title ?: "Total Expenses"
+    val centerValue = activeEntry?.second ?: analytics.totalExpense
+    val centerShare = if (analytics.totalExpense > 0.0) {
+        ((centerValue / analytics.totalExpense) * 100.0).roundToInt()
+    } else {
+        0
+    }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 14.dp, bottom = 28.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        item(key = "insights_header") {
+            Column {
+                Text(
+                    text = "Financial Insights",
+                    style = MaterialTheme.typography.headlineLarge,
+                    color = Color.White
+                )
+                Text(
+                    text = "Health score, spending habits, and category share.",
+                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
+                    color = Color(0xFF8B93A7)
+                )
+            }
+        }
+
+        // Vault Health Score Card
+        item(key = "health_score") {
+            val scoreVal = analytics.healthScore
+            val scoreColor = when {
+                scoreVal == null -> primary
+                scoreVal >= 80 -> Color(0xFF10B981)
+                scoreVal >= 55 -> Color(0xFFF59E0B)
+                else -> Color(0xFFF43F5E)
+            }
+            val scoreSweep = if (scoreVal != null) (scoreVal / 100f) * 360f * animProgress else 0f
+
+            SurfaceCard {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(18.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier.size(76.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Canvas(modifier = Modifier.fillMaxSize()) {
+                            val strokeW = 7.dp.toPx()
+                            val inset = strokeW / 2f
+                            val arcSize = Size(size.width - strokeW, size.height - strokeW)
+                            drawArc(
+                                color = Color(0xFF1D212D),
+                                startAngle = 0f,
+                                sweepAngle = 360f,
+                                useCenter = false,
+                                topLeft = Offset(inset, inset),
+                                size = arcSize,
+                                style = Stroke(width = strokeW, cap = StrokeCap.Round)
+                            )
+                            if (scoreSweep > 0f) {
+                                drawArc(
+                                    color = scoreColor,
+                                    startAngle = -90f,
+                                    sweepAngle = scoreSweep,
+                                    useCenter = false,
+                                    topLeft = Offset(inset, inset),
+                                    size = arcSize,
+                                    style = Stroke(width = strokeW, cap = StrokeCap.Round)
+                                )
+                            }
+                        }
+                        Text(
+                            text = scoreVal?.toString() ?: "--",
+                            style = MaterialTheme.typography.headlineMedium.copy(fontSize = 20.sp),
+                            color = Color.White
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(16.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Vault Health Score",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = Color.White,
+                                modifier = Modifier.weight(1f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = analytics.healthGrade,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = scoreColor,
+                                maxLines = 1
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = analytics.healthGuidance,
+                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+                            color = Color(0xFF8B93A7)
+                        )
+                    }
+                }
+            }
+        }
+
+        // Habit Highlights: No-Spend Streak & Largest Expense
+        item(key = "habit_highlights") {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                SurfaceCard(modifier = Modifier.weight(1f)) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Text(
+                            text = "NO-SPEND STREAK",
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                            color = Color(0xFF8B93A7),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "${analytics.noSpendStreak} ${if (analytics.noSpendStreak == 1) "Day" else "Days"}",
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold
+                            ),
+                            color = Color(0xFF10B981),
+                            maxLines = 1
+                        )
+                        Text(
+                            text = "Consecutive Zero Spend",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 11.sp),
+                            color = Color(0xFF7B8399),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
+                SurfaceCard(modifier = Modifier.weight(1f)) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Text(
+                            text = "LARGEST EXPENSE",
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                            color = Color(0xFF8B93A7),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = if (analytics.largestExpenseTitle != null) {
+                                formatMoney(analytics.largestExpenseAmount, currency.symbol, false, hideBalance)
+                            } else {
+                                "None"
+                            },
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold
+                            ),
+                            color = Color(0xFFFB7185),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = analytics.largestExpenseTitle ?: "No Expenses Logged",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 11.sp),
+                            color = Color(0xFF7B8399),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        }
+
+        // Cash Flow Balance Card
+        item(key = "cashflow_ratio") {
+            val maxFlow = max(1.0, max(analytics.totalIncome, analytics.totalExpense))
+            val incomeRatio = (analytics.totalIncome / maxFlow).toFloat().coerceIn(0f, 1f)
+            val expenseRatio = (analytics.totalExpense / maxFlow).toFloat().coerceIn(0f, 1f)
+
+            SurfaceCard {
+                Column(modifier = Modifier.padding(18.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Cash Flow Balance",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = Color.White,
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(primary.copy(alpha = 0.16f))
+                                .padding(horizontal = 9.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = "Savings Rate: ${analytics.savingsRate}%",
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                color = primary,
+                                maxLines = 1
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    ComparisonBarRow(
+                        label = "Inflow",
+                        valueText = formatMoney(analytics.totalIncome, currency.symbol, false, hideBalance),
+                        fraction = incomeRatio * animProgress,
+                        barColor = Color(0xFF10B981)
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    ComparisonBarRow(
+                        label = "Outflow",
+                        valueText = formatMoney(analytics.totalExpense, currency.symbol, false, hideBalance),
+                        fraction = expenseRatio * animProgress,
+                        barColor = Color(0xFFF43F5E)
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(0.75.dp)
+                            .background(Color(0xFF1E222E))
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Average Daily Spend",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
+                            color = Color(0xFF8B93A7),
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = formatMoney(analytics.dailyAverage, currency.symbol, false, hideBalance),
+                            style = MaterialTheme.typography.titleMedium.copy(fontSize = 14.sp),
+                            color = Color.White,
+                            maxLines = 1
+                        )
+                    }
+                }
+            }
+        }
+
+        // Seven-Day Area Curve Chart
+        item(key = "trend_curve") {
+            SurfaceCard {
+                Column(modifier = Modifier.padding(18.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Seven-Day Spend Trend",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = Color.White,
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Daily Curve",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = primary,
+                            maxLines = 1
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    val maxVal = max(1.0, analytics.sevenDayPoints.maxOfOrNull { it.second } ?: 1.0)
+                    Canvas(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(108.dp)
+                    ) {
+                        val pts = analytics.sevenDayPoints
+                        if (pts.size >= 2) {
+                            val topPad = 12.dp.toPx()
+                            val bottomPad = 10.dp.toPx()
+                            val usableH = size.height - topPad - bottomPad
+                            val stepX = size.width / (pts.size - 1)
+
+                            for (g in 0..2) {
+                                val gy = topPad + usableH * (g / 2f)
+                                drawLine(
+                                    color = Color.White.copy(alpha = 0.05f),
+                                    start = Offset(0f, gy),
+                                    end = Offset(size.width, gy),
+                                    strokeWidth = 1.dp.toPx()
+                                )
+                            }
+
+                            val offsets = pts.mapIndexed { idx, (_, value) ->
+                                val norm = (value / maxVal).toFloat().coerceIn(0f, 1f) * animProgress
+                                Offset(
+                                    x = idx * stepX,
+                                    y = topPad + usableH * (1f - norm)
+                                )
+                            }
+
+                            val linePath = Path().apply {
+                                moveTo(offsets.first().x, offsets.first().y)
+                                for (i in 0 until offsets.lastIndex) {
+                                    val p0 = offsets[i]
+                                    val p1 = offsets[i + 1]
+                                    val midX = (p0.x + p1.x) / 2f
+                                    cubicTo(midX, p0.y, midX, p1.y, p1.x, p1.y)
+                                }
+                            }
+
+                            val fillPath = Path().apply {
+                                addPath(linePath)
+                                lineTo(offsets.last().x, size.height)
+                                lineTo(offsets.first().x, size.height)
+                                close()
+                            }
+
+                            drawPath(
+                                path = fillPath,
+                                brush = Brush.verticalGradient(
+                                    colors = listOf(primary.copy(alpha = 0.25f), Color.Transparent)
+                                )
+                            )
+                            drawPath(
+                                path = linePath,
+                                brush = Brush.horizontalGradient(listOf(primary, secondary)),
+                                style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round)
+                            )
+
+                            offsets.forEachIndexed { idx, pt ->
+                                if (pts[idx].second > 0.0) {
+                                    drawCircle(
+                                        color = Color(0xFF101219),
+                                        radius = 4.5.dp.toPx(),
+                                        center = pt
+                                    )
+                                    drawCircle(
+                                        color = primary,
+                                        radius = 3.dp.toPx(),
+                                        center = pt
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        analytics.sevenDayPoints.forEach { (day, _) ->
+                            Text(
+                                text = day,
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                color = Color(0xFF8B93A7)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Category Allocation Ring
+        item(key = "category_donut") {
+            SurfaceCard {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(18.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Category Allocation",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = Color.White,
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        if (selectedCategory != null) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Reset",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = primary,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        onHaptic()
+                                        selectedCategory = null
+                                    }
+                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Box(
+                        modifier = Modifier.size(184.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Canvas(modifier = Modifier.fillMaxSize()) {
+                            val strokeW = 15.dp.toPx()
+                            val inset = strokeW / 2f
+                            val arcSize = Size(size.width - strokeW, size.height - strokeW)
+
+                            if (analytics.categoryTotals.isEmpty() || analytics.totalExpense <= 0.0) {
+                                drawArc(
+                                    color = Color(0xFF1D212D),
+                                    startAngle = 0f,
+                                    sweepAngle = 360f,
+                                    useCenter = false,
+                                    topLeft = Offset(inset, inset),
+                                    size = arcSize,
+                                    style = Stroke(width = strokeW, cap = StrokeCap.Round)
+                                )
+                            } else {
+                                var startAngle = -90f
+                                val gap = if (analytics.categoryTotals.size > 1) 4f else 0f
+                                analytics.categoryTotals.forEach { (cat, value) ->
+                                    val rawSweep = ((value / analytics.totalExpense) * 360.0).toFloat() * animProgress
+                                    val sweep = max(2f, rawSweep - gap)
+                                    val dimmed = selectedCategory != null && selectedCategory != cat
+                                    drawArc(
+                                        color = if (dimmed) cat.color.copy(alpha = 0.22f) else cat.color,
+                                        startAngle = startAngle,
+                                        sweepAngle = sweep,
+                                        useCenter = false,
+                                        topLeft = Offset(inset, inset),
+                                        size = arcSize,
+                                        style = Stroke(width = strokeW, cap = StrokeCap.Round)
+                                    )
+                                    startAngle += rawSweep
+                                }
+                            }
+                        }
+
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.padding(horizontal = 24.dp)
+                        ) {
+                            Text(
+                                text = centerLabel,
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                color = Color(0xFF8B93A7),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = formatMoney(centerValue, currency.symbol, false, hideBalance),
+                                style = MaterialTheme.typography.headlineMedium,
+                                color = Color.White,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = "$centerShare% Share",
+                                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+                                color = activeEntry?.first?.color ?: primary,
+                                maxLines = 1
+                            )
+                        }
+                    }
+
+                    if (analytics.categoryTotals.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            analytics.categoryTotals.forEach { (cat, _) ->
+                                val isSelected = selectedCategory == cat
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(
+                                            if (isSelected) cat.color.copy(alpha = 0.20f) else Color(0xFF161922)
+                                        )
+                                        .border(
+                                            0.75.dp,
+                                            if (isSelected) cat.color else Color(0xFF232836),
+                                            RoundedCornerShape(10.dp)
+                                        )
+                                        .clickable {
+                                            onHaptic()
+                                            selectedCategory = if (isSelected) null else cat
+                                        }
+                                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(7.dp)
+                                            .clip(CircleShape)
+                                            .background(cat.color)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = cat.title,
+                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                                        color = Color.White,
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (analytics.categoryTotals.isNotEmpty()) {
+            item(key = "category_breakdown") {
+                SurfaceCard {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        Text(
+                            text = "Category Breakdown",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = Color.White
+                        )
+                        analytics.categoryTotals.forEach { (cat, value) ->
+                            val share = if (analytics.totalExpense > 0.0) {
+                                (value / analytics.totalExpense).toFloat().coerceIn(0f, 1f)
+                            } else {
+                                0f
+                            }
+                            Column {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = cat.title,
+                                        style = MaterialTheme.typography.bodyMedium.copy(
+                                            fontWeight = FontWeight.Medium
+                                        ),
+                                        color = Color.White,
+                                        modifier = Modifier.weight(1f),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "${formatMoney(value, currency.symbol, true, hideBalance)} (${(share * 100).roundToInt()}%)",
+                                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.5.sp),
+                                        color = cat.color,
+                                        maxLines = 1
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(6.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFF1A1E29))
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth(share * animProgress)
+                                            .fillMaxHeight()
+                                            .clip(CircleShape)
+                                            .background(cat.color)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ComparisonBarRow(
+    label: String,
+    valueText: String,
+    fraction: Float,
+    barColor: Color
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
+                color = Color(0xFF9EA7BD),
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = valueText,
+                style = MaterialTheme.typography.titleMedium.copy(fontSize = 14.sp),
+                color = Color.White,
+                maxLines = 1
+            )
+        }
+        Spacer(modifier = Modifier.height(6.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(8.dp)
+                .clip(CircleShape)
+                .background(Color(0xFF1A1E29))
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(fraction.coerceIn(0f, 1f))
+                    .fillMaxHeight()
+                    .clip(CircleShape)
+                    .background(barColor)
+            )
+        }
+    }
+}
+
+@Composable
+private fun GoalsScreen(
+    goals: List<SavingsGoal>,
+    currency: CurrencyOption,
+    theme: AccentTheme,
+    primary: Color,
+    secondary: Color,
+    hideBalance: Boolean,
+    onAddGoal: () -> Unit,
+    onEditGoal: (SavingsGoal) -> Unit,
+    onDepositGoal: (SavingsGoal) -> Unit,
+    onDeleteGoal: (SavingsGoal) -> Unit
+) {
+    val totals = remember(goals) {
+        val target = goals.sumOf { it.targetAmount }
+        val saved = goals.sumOf { it.savedAmount }
+        val ratio = if (target > 0.0) (saved / target).toFloat().coerceIn(0f, 1f) else 0f
+        Triple(saved, target, ratio)
+    }
+
+    val animatedOverall by animateFloatAsState(
+        targetValue = totals.third,
+        animationSpec = tween(420, easing = FastOutSlowInEasing),
+        label = "goalsProgress"
+    )
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 14.dp, bottom = 28.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        item(key = "goals_header") {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Savings Goals",
+                        style = MaterialTheme.typography.headlineLarge,
+                        color = Color.White,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = "Milestone tracking for your financial targets.",
+                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
+                        color = Color(0xFF8B93A7),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(10.dp))
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(primary.copy(alpha = 0.16f))
+                        .border(0.8.dp, primary.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
+                        .clickable(onClick = onAddGoal)
+                        .padding(horizontal = 12.dp, vertical = 9.dp)
+                ) {
+                    PlusGlyph(color = primary, modifier = Modifier.size(12.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Add Goal",
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp),
+                        color = primary,
+                        maxLines = 1
+                    )
+                }
+            }
+        }
+
+        item(key = "reserve_banner") {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(22.dp))
+                    .background(
+                        Brush.linearGradient(
+                            colors = listOf(theme.cardTop, theme.cardMid, theme.cardBottom)
+                        )
+                    )
+                    .border(0.8.dp, Color(0xFF232836), RoundedCornerShape(22.dp))
+                    .padding(18.dp)
+            ) {
+                Column {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "TOTAL RESERVED",
+                            style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.2.sp),
+                            color = Color(0xFF9EA7BD),
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "${(totals.third * 100).roundToInt()}% Funded",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = primary,
+                            maxLines = 1
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = formatMoney(totals.first, currency.symbol, true, hideBalance),
+                        style = MaterialTheme.typography.headlineLarge,
+                        color = Color.White,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Combined Target: ${formatMoney(totals.second, currency.symbol, false, hideBalance)}",
+                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+                        color = Color(0xFF9EA7BD),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(8.dp)
+                            .clip(CircleShape)
+                            .background(Color.White.copy(alpha = 0.09f))
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth(animatedOverall)
+                                .fillMaxHeight()
+                                .clip(CircleShape)
+                                .background(Brush.horizontalGradient(listOf(primary, secondary)))
+                        )
+                    }
+                }
+            }
+        }
+
+        if (goals.isEmpty()) {
+            item(key = "no_goals") {
+                SurfaceCard {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 32.dp, horizontal = 20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "No Savings Goals Yet",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = Color.White,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "Tap Add Goal above to create your first savings milestone.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color(0xFF8B93A7),
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            }
+        } else {
+            items(items = goals, key = { it.id }) { goal ->
+                MilestoneGoalCard(
+                    goal = goal,
+                    currency = currency,
+                    hideBalance = hideBalance,
+                    onEdit = { onEditGoal(goal) },
+                    onDeposit = { onDepositGoal(goal) },
+                    onDelete = { onDeleteGoal(goal) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MilestoneGoalCard(
+    goal: SavingsGoal,
+    currency: CurrencyOption,
+    hideBalance: Boolean,
+    onEdit: () -> Unit,
+    onDeposit: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val accent = Color(goal.colorHex)
+    val ratio = if (goal.targetAmount > 0.0) {
+        (goal.savedAmount / goal.targetAmount).toFloat().coerceIn(0f, 1f)
+    } else {
+        0f
+    }
+    val remaining = max(0.0, goal.targetAmount - goal.savedAmount)
+    val animatedRatio by animateFloatAsState(
+        targetValue = ratio,
+        animationSpec = tween(380, easing = FastOutSlowInEasing),
+        label = "goalBar_${goal.id}"
+    )
+
+    SurfaceCard {
+        Column(modifier = Modifier.padding(18.dp)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onEdit),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .clip(CircleShape)
+                            .background(accent)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = goal.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Color.White,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(accent.copy(alpha = 0.16f))
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = "${(ratio * 100).roundToInt()}%",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = accent,
+                        maxLines = 1
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "${formatMoney(goal.savedAmount, currency.symbol, false, hideBalance)} / ${formatMoney(goal.targetAmount, currency.symbol, false, hideBalance)}",
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold
+                    ),
+                    color = Color(0xFFD6DCEB),
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = if (remaining <= 0.0) {
+                        "Completed"
+                    } else {
+                        "${formatMoney(remaining, currency.symbol, false, hideBalance)} Left"
+                    },
+                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+                    color = Color(0xFF8B93A7),
+                    maxLines = 1
+                )
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(10.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFF1A1E29))
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(animatedRatio)
+                        .fillMaxHeight()
+                        .clip(CircleShape)
+                        .background(accent)
+                )
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    listOf(0.25f, 0.50f, 0.75f).forEach { mark ->
+                        drawLine(
+                            color = Color(0xFF07080B).copy(alpha = 0.55f),
+                            start = Offset(size.width * mark, 0f),
+                            end = Offset(size.width * mark, size.height),
+                            strokeWidth = 1.5.dp.toPx()
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = onDeposit,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = accent.copy(alpha = 0.18f),
+                        contentColor = accent
+                    ),
+                    border = BorderStroke(0.8.dp, accent.copy(alpha = 0.45f)),
+                    contentPadding = PaddingValues(vertical = 10.dp)
+                ) {
+                    Text(
+                        text = "Deposit",
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1
+                    )
+                }
+
+                OutlinedButton(
+                    onClick = onEdit,
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(0.8.dp, Color(0xFF262B38)),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp)
+                ) {
+                    Text(
+                        text = "Edit",
+                        color = Color.White,
+                        maxLines = 1
+                    )
+                }
+
+                OutlinedButton(
+                    onClick = onDelete,
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(0.8.dp, Color(0xFF262B38)),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp)
+                ) {
+                    Text(
+                        text = "Delete",
+                        color = Color(0xFF9EA7BD),
+                        maxLines = 1
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsScreen(
+    monthlyBudget: Double,
+    currency: CurrencyOption,
+    activeTheme: AccentTheme,
+    hapticsEnabled: Boolean,
+    hideBalance: Boolean,
+    primary: Color,
+    hasCrashReport: Boolean,
+    onEditBudget: () -> Unit,
+    onSelectCurrency: (CurrencyOption) -> Unit,
+    onSelectTheme: (AccentTheme) -> Unit,
+    onToggleHaptics: (Boolean) -> Unit,
+    onTogglePrivacy: (Boolean) -> Unit,
+    onExportBackupJson: () -> Unit,
+    onOpenImportBackup: () -> Unit,
+    onExportCsv: () -> Unit,
+    onOpenSupportHub: () -> Unit,
+    onOpenDiagnosticLogs: () -> Unit,
+    onOpenCredits: () -> Unit,
+    onRequestClearAll: () -> Unit
+) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 14.dp, bottom = 28.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        item(key = "settings_header") {
+            Column {
+                Text(
+                    text = "Settings",
+                    style = MaterialTheme.typography.headlineLarge,
+                    color = Color.White
+                )
+                Text(
+                    text = "Manage caps, themes, backups, diagnostics, and credits.",
+                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
+                    color = Color(0xFF8B93A7)
+                )
+            }
+        }
+
+        item(key = "budget_setting") {
+            Column {
+                SettingsSectionTitle("Budget & Currency")
+                Spacer(modifier = Modifier.height(8.dp))
+                SurfaceCard {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable(onClick = onEditBudget)
+                                .padding(16.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Monthly Spending Cap",
+                                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp),
+                                    color = Color.White
+                                )
+                                Text(
+                                    text = "Controls your Safe-to-Spend daily limit and health score.",
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+                                    color = Color(0xFF8B93A7)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(primary.copy(alpha = 0.16f))
+                                    .border(0.75.dp, primary.copy(alpha = 0.45f), RoundedCornerShape(10.dp))
+                                    .padding(horizontal = 11.dp, vertical = 6.dp)
+                            ) {
+                                Text(
+                                    text = if (monthlyBudget > 0.0) {
+                                        formatMoney(monthlyBudget, currency.symbol, false)
+                                    } else {
+                                        "Not Set"
+                                    },
+                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp),
+                                    color = primary,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp)
+                                .height(0.75.dp)
+                                .background(Color(0xFF1D212D))
+                        )
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState())
+                                .padding(14.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            CurrencyOption.entries.forEach { option ->
+                                val selected = option == currency
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(
+                                            if (selected) primary.copy(alpha = 0.20f) else Color(0xFF161922)
+                                        )
+                                        .border(
+                                            0.8.dp,
+                                            if (selected) primary else Color(0xFF242937),
+                                            RoundedCornerShape(10.dp)
+                                        )
+                                        .clickable { onSelectCurrency(option) }
+                                        .padding(horizontal = 13.dp, vertical = 9.dp)
+                                ) {
+                                    Text(
+                                        text = "${option.symbol} ${option.code}",
+                                        style = MaterialTheme.typography.bodyMedium.copy(
+                                            fontSize = 13.sp,
+                                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
+                                        ),
+                                        color = if (selected) primary else Color(0xFFC7CEDF),
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        item(key = "theme_setting") {
+            Column {
+                SettingsSectionTitle("Visual Theme")
+                Spacer(modifier = Modifier.height(8.dp))
+                SurfaceCard {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            AccentTheme.entries.take(2).forEach { theme ->
+                                ThemeChoiceCard(
+                                    theme = theme,
+                                    selected = theme == activeTheme,
+                                    onClick = { onSelectTheme(theme) },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            AccentTheme.entries.drop(2).forEach { theme ->
+                                ThemeChoiceCard(
+                                    theme = theme,
+                                    selected = theme == activeTheme,
+                                    onClick = { onSelectTheme(theme) },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Support, Bug Reports & Diagnostic Logs Hub
+        item(key = "support_diagnostics") {
+            Column {
+                SettingsSectionTitle("Support & Diagnostics")
+                Spacer(modifier = Modifier.height(8.dp))
+                SurfaceCard {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable(onClick = onOpenSupportHub)
+                                .padding(16.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Contact Developer & Bug Report",
+                                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp),
+                                    color = Color.White
+                                )
+                                Text(
+                                    text = "Send a message, feature request, or privacy-safe logs to $DEVELOPER_NAME.",
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+                                    color = Color(0xFF8B93A7)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(primary.copy(alpha = 0.16f))
+                                    .border(0.75.dp, primary.copy(alpha = 0.45f), RoundedCornerShape(10.dp))
+                                    .padding(horizontal = 11.dp, vertical = 6.dp)
+                            ) {
+                                Text(
+                                    text = "Compose",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = primary,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp)
+                                .height(0.75.dp)
+                                .background(Color(0xFF1D212D))
+                        )
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable(onClick = onOpenDiagnosticLogs)
+                                .padding(16.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Diagnostic & Crash Logs",
+                                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp),
+                                    color = Color.White
+                                )
+                                Text(
+                                    text = if (hasCrashReport) {
+                                        "Last crash trace captured and ready for troubleshooting."
+                                    } else {
+                                        "Inspect local event logs without exposing financial amounts."
+                                    },
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+                                    color = if (hasCrashReport) Color(0xFFF59E0B) else Color(0xFF8B93A7)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = "View",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (hasCrashReport) Color(0xFFF59E0B) else Color(0xFF9EA7BD),
+                                maxLines = 1
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Offline Backup & CSV Export
+        item(key = "backup_export") {
+            Column {
+                SettingsSectionTitle("Offline Backup & Export")
+                Spacer(modifier = Modifier.height(8.dp))
+                SurfaceCard {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = onExportBackupJson,
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(0.8.dp, Color(0xFF282D3B)),
+                                contentPadding = PaddingValues(vertical = 11.dp, horizontal = 8.dp)
+                            ) {
+                                Text("Copy Backup", color = Color.White, maxLines = 1)
+                            }
+                            OutlinedButton(
+                                onClick = onOpenImportBackup,
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(0.8.dp, primary.copy(alpha = 0.45f)),
+                                contentPadding = PaddingValues(vertical = 11.dp, horizontal = 8.dp)
+                            ) {
+                                Text("Restore JSON", color = primary, maxLines = 1)
+                            }
+                        }
+                        OutlinedButton(
+                            onClick = onExportCsv,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(0.8.dp, Color(0xFF282D3B)),
+                            contentPadding = PaddingValues(vertical = 11.dp)
+                        ) {
+                            Text("Copy CSV Spreadsheet Statement", color = Color(0xFFD6DCEB), maxLines = 1)
+                        }
+                    }
+                }
+            }
+        }
+
+        item(key = "preferences_data") {
+            Column {
+                SettingsSectionTitle("Preferences & Storage")
+                Spacer(modifier = Modifier.height(8.dp))
+                SurfaceCard {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        SettingsToggleRow(
+                            title = "Privacy Masking",
+                            subtitle = "Hide financial amounts across the application.",
+                            checked = hideBalance,
+                            accent = primary,
+                            onCheckedChange = onTogglePrivacy
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp)
+                                .height(0.75.dp)
+                                .background(Color(0xFF1D212D))
+                        )
+                        SettingsToggleRow(
+                            title = "Haptic Feedback",
+                            subtitle = "Crisp tactile response on actions and tabs.",
+                            checked = hapticsEnabled,
+                            accent = primary,
+                            onCheckedChange = onToggleHaptics
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp)
+                                .height(0.75.dp)
+                                .background(Color(0xFF1D212D))
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp)
+                        ) {
+                            Button(
+                                onClick = onRequestClearAll,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFFF43F5E).copy(alpha = 0.16f),
+                                    contentColor = Color(0xFFFB7185)
+                                ),
+                                border = BorderStroke(0.8.dp, Color(0xFFF43F5E).copy(alpha = 0.45f)),
+                                contentPadding = PaddingValues(vertical = 11.dp)
+                            ) {
+                                Text("Clear All Local Data", fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Open-Source Credits & Version Registry Card
+        item(key = "credits_section") {
+            Column {
+                SettingsSectionTitle("Credits & Version History")
+                Spacer(modifier = Modifier.height(8.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(
+                            Brush.linearGradient(
+                                colors = listOf(
+                                    activeTheme.cardTop.copy(alpha = 0.85f),
+                                    Color(0xFF101219)
+                                )
+                            )
+                        )
+                        .border(0.85.dp, primary.copy(alpha = 0.32f), RoundedCornerShape(20.dp))
+                        .clickable(onClick = onOpenCredits)
+                        .padding(18.dp)
+                ) {
+                    Column {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            FinVaultBrandMark(
+                                primary = primary,
+                                secondary = activeTheme.secondary,
+                                modifier = Modifier.size(46.dp)
+                            )
+                            Spacer(modifier = Modifier.width(14.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = DEVELOPER_NAME,
+                                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 16.sp),
+                                    color = Color.White,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = "Creator & Lead Developer",
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+                                    color = primary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = "FinVault v$APP_VERSION_NAME • $APP_BUILD_TRACK",
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 11.sp),
+                                    color = Color(0xFF8B93A7),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color.Black.copy(alpha = 0.28f))
+                                .border(0.75.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "View Credits, Changelog & MIT License",
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium
+                                ),
+                                color = Color(0xFFD6DCEB),
+                                modifier = Modifier.weight(1f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Open",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = primary,
+                                maxLines = 1
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsSectionTitle(text: String) {
+    Text(
+        text = text.uppercase(Locale.US),
+        style = MaterialTheme.typography.labelSmall.copy(
+            fontSize = 11.sp,
+            letterSpacing = 1.1.sp
+        ),
+        color = Color(0xFF8B93A7)
+    )
+}
+
+@Composable
+private fun SettingsToggleRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    accent: Color,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 13.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp),
+                color = Color.White
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+                color = Color(0xFF8B93A7)
+            )
+        }
+        Spacer(modifier = Modifier.width(10.dp))
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Color(0xFF07080B),
+                checkedTrackColor = accent,
+                uncheckedThumbColor = Color(0xFF9EA7BD),
+                uncheckedTrackColor = Color(0xFF191D28),
+                uncheckedBorderColor = Color(0xFF2C3242)
+            )
+        )
+    }
+}
+
+@Composable
+private fun ThemeChoiceCard(
+    theme: AccentTheme,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(
+                if (selected) theme.primary.copy(alpha = 0.18f) else Color(0xFF161922)
+            )
+            .border(
+                0.85.dp,
+                if (selected) theme.primary else Color(0xFF242937),
+                RoundedCornerShape(12.dp)
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 12.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(11.dp)
+                .clip(CircleShape)
+                .background(theme.primary)
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = theme.title,
+            style = MaterialTheme.typography.bodyMedium.copy(
+                fontSize = 13.sp,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
+            ),
+            color = Color.White,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+@Composable
+private fun DockedBottomBar(
+    selectedTab: Int,
+    accent: Color,
+    onSelectTab: (Int) -> Unit
+) {
+    val tabs = listOf("Vault", "Insights", "Goals", "Settings")
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color(0xFF0B0D12))
+            .navigationBarsPadding()
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(0.75.dp)
+                .background(Color(0xFF1E222E))
+        )
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(64.dp)
+                .padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            tabs.forEachIndexed { index, label ->
+                val isSelected = index == selectedTab
+                val itemColor = if (isSelected) accent else Color(0xFF7B8399)
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) { onSelectTab(index) },
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .width(48.dp)
+                            .height(28.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(if (isSelected) accent.copy(alpha = 0.16f) else Color.Transparent),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        when (index) {
+                            0 -> VaultGlyph(color = itemColor, modifier = Modifier.size(18.dp))
+                            1 -> InsightsGlyph(color = itemColor, modifier = Modifier.size(18.dp))
+                            2 -> TargetGlyph(color = itemColor, modifier = Modifier.size(18.dp))
+                            else -> SlidersGlyph(color = itemColor, modifier = Modifier.size(18.dp))
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(3.dp))
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 10.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                            letterSpacing = 0.2.sp
+                        ),
+                        color = if (isSelected) Color.White else Color(0xFF7B8399),
+                        maxLines = 1
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ContactAndReportDialog(
+    primary: Color,
+    diagnosticBundle: String,
+    onSendEmail: (String, String) -> Unit,
+    onOpenGitHubIssue: (String, String) -> Unit,
+    onShareReport: (String, String) -> Unit,
+    onCopyReport: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var reportType by remember { mutableStateOf(SupportReportType.BUG) }
+    var messageText by remember { mutableStateOf("") }
+    var attachDiagnostics by remember { mutableStateOf(true) }
+
+    fun composeSubject(): String {
+        return "[FinVault v$APP_VERSION_NAME] ${reportType.title}"
+    }
+
+    fun composeBody(): String {
+        val sb = StringBuilder()
+        sb.appendLine("Report Type: ${reportType.title}")
+        sb.appendLine()
+        sb.appendLine("Message / Details:")
+        sb.appendLine(messageText.trim().ifEmpty { "(Describe the issue, suggestion, or message here)" })
+        if (attachDiagnostics) {
+            sb.appendLine()
+            sb.appendLine(diagnosticBundle)
+        }
+        return sb.toString()
+    }
+
+    VaultDialogShell(onDismiss = onDismiss) {
+        Text(
+            text = "Contact & Support",
+            style = MaterialTheme.typography.headlineMedium.copy(fontSize = 20.sp),
+            color = Color.White
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = "Reach $DEVELOPER_NAME directly with bug reports, feature ideas, or privacy-safe logs.",
+            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+            color = Color(0xFF8B93A7)
+        )
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            SupportReportType.entries.forEach { option ->
+                val selected = reportType == option
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (selected) primary.copy(alpha = 0.20f) else Color(0xFF151822))
+                        .border(
+                            0.85.dp,
+                            if (selected) primary else Color(0xFF242937),
+                            RoundedCornerShape(10.dp)
+                        )
+                        .clickable { reportType = option }
+                        .padding(horizontal = 11.dp, vertical = 7.dp)
+                ) {
+                    Text(
+                        text = option.title,
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                        color = if (selected) Color.White else Color(0xFF9EA7BD),
+                        maxLines = 1
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Text(
+            text = "Message / Steps to Reproduce",
+            style = MaterialTheme.typography.labelSmall,
+            color = Color(0xFF9EA7BD)
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(112.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color(0xFF161A24))
+                .border(0.85.dp, Color(0xFF282E3E), RoundedCornerShape(12.dp))
+                .padding(12.dp)
+        ) {
+            if (messageText.isEmpty()) {
+                Text(
+                    text = "Describe what happened or what feature you would like added...",
+                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
+                    color = Color(0xFF5D657A)
+                )
+            }
+            BasicTextField(
+                value = messageText,
+                onValueChange = { messageText = it },
+                cursorBrush = SolidColor(primary),
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                textStyle = TextStyle(
+                    fontFamily = FontFamily.SansSerif,
+                    fontSize = 13.5.sp,
+                    color = Color.White,
+                    lineHeight = 19.sp
+                ),
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color(0xFF151822))
+                .border(0.75.dp, Color(0xFF232836), RoundedCornerShape(12.dp))
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Attach Diagnostic & Crash Logs",
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.SemiBold
+                    ),
+                    color = Color.White
+                )
+                Text(
+                    text = "Includes device model, API level & logs. Zero financial values.",
+                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 11.sp),
+                    color = Color(0xFF8B93A7)
+                )
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Switch(
+                checked = attachDiagnostics,
+                onCheckedChange = { attachDiagnostics = it },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color(0xFF07080B),
+                    checkedTrackColor = primary,
+                    uncheckedThumbColor = Color(0xFF9EA7BD),
+                    uncheckedTrackColor = Color(0xFF191D28),
+                    uncheckedBorderColor = Color(0xFF2C3242)
+                )
+            )
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Button(
+            onClick = { onSendEmail(composeSubject(), composeBody()) },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = primary,
+                contentColor = Color(0xFF07080B)
+            )
+        ) {
+            Text("Send via Email", fontWeight = FontWeight.Bold)
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedButton(
+                onClick = { onOpenGitHubIssue(composeSubject(), composeBody()) },
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(0.85.dp, Color(0xFF2B3140)),
+                contentPadding = PaddingValues(vertical = 10.dp, horizontal = 6.dp)
+            ) {
+                Text("GitHub Issue", color = Color.White, maxLines = 1)
+            }
+            OutlinedButton(
+                onClick = { onShareReport(composeSubject(), composeBody()) },
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(0.85.dp, Color(0xFF2B3140)),
+                contentPadding = PaddingValues(vertical = 10.dp, horizontal = 6.dp)
+            ) {
+                Text("Share Logs", color = Color.White, maxLines = 1)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedButton(
+                onClick = { onCopyReport("${composeSubject()}\n\n${composeBody()}") },
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(0.85.dp, primary.copy(alpha = 0.45f)),
+                contentPadding = PaddingValues(vertical = 10.dp, horizontal = 6.dp)
+            ) {
+                Text("Copy Report", color = primary, maxLines = 1)
+            }
+            OutlinedButton(
+                onClick = onDismiss,
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(0.85.dp, Color(0xFF2B3140)),
+                contentPadding = PaddingValues(vertical = 10.dp, horizontal = 6.dp)
+            ) {
+                Text("Close", color = Color(0xFFB5BCD0), maxLines = 1)
+            }
+        }
+    }
+}
+
+@Composable
+private fun DiagnosticLogsDialog(
+    primary: Color,
+    logs: List<String>,
+    lastCrash: String?,
+    onCopyBundle: () -> Unit,
+    onClearLogs: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    VaultDialogShell(onDismiss = onDismiss) {
+        Text(
+            text = "Diagnostic & Crash Logs",
+            style = MaterialTheme.typography.headlineMedium.copy(fontSize = 20.sp),
+            color = Color.White
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = "Privacy-safe system timeline recorded locally on your device.",
+            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+            color = Color(0xFF8B93A7)
+        )
+
+        if (lastCrash != null) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = "LAST CAPTURED CRASH TRACE",
+                style = MaterialTheme.typography.labelSmall,
+                color = Color(0xFFF59E0B)
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color(0xFF1A1412))
+                    .border(0.8.dp, Color(0xFFF59E0B).copy(alpha = 0.45f), RoundedCornerShape(12.dp))
+                    .padding(10.dp)
+            ) {
+                Text(
+                    text = lastCrash.take(900),
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.5.sp,
+                        lineHeight = 15.sp
+                    ),
+                    color = Color(0xFFFDE68A)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(
+            text = "RECENT EVENTS (${logs.size})",
+            style = MaterialTheme.typography.labelSmall,
+            color = Color(0xFF8B93A7)
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color(0xFF0B0D13))
+                .border(0.75.dp, Color(0xFF202532), RoundedCornerShape(12.dp))
+                .padding(12.dp)
+        ) {
+            if (logs.isEmpty()) {
+                Text(
+                    text = "No diagnostic events recorded yet.",
+                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+                    color = Color(0xFF7B8399)
+                )
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    logs.take(18).forEach { entry ->
+                        Text(
+                            text = entry,
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 10.5.sp,
+                                lineHeight = 14.sp
+                            ),
+                            color = Color(0xFFAAB3C7)
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedButton(
+                onClick = onClearLogs,
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(0.85.dp, Color(0xFF2B3140)),
+                contentPadding = PaddingValues(vertical = 10.dp, horizontal = 6.dp)
+            ) {
+                Text("Clear Logs", color = Color(0xFFFB7185), maxLines = 1)
+            }
+            Button(
+                onClick = onCopyBundle,
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = primary,
+                    contentColor = Color(0xFF07080B)
+                ),
+                contentPadding = PaddingValues(vertical = 10.dp, horizontal = 6.dp)
+            ) {
+                Text("Copy Bundle", fontWeight = FontWeight.Bold, maxLines = 1)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        OutlinedButton(
+            onClick = onDismiss,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            border = BorderStroke(0.85.dp, Color(0xFF2B3140))
+        ) {
+            Text("Close", color = Color(0xFFB5BCD0))
+        }
+    }
+}
+
+@Composable
+private fun PurchaseImpactSimulatorDialog(
+    transactions: List<TransactionItem>,
+    goals: List<SavingsGoal>,
+    monthlyBudget: Double,
+    currency: CurrencyOption,
+    primary: Color,
+    onDismiss: () -> Unit,
+    onRecordPurchase: (String, Double, Category) -> Unit,
+    onSaveInstead: (Long, Double, String) -> Unit
+) {
+    val expenseCategories = remember { Category.entries.filter { !it.isIncomeCategory } }
+    var itemTitle by remember { mutableStateOf("") }
+    var priceText by remember { mutableStateOf("") }
+    var selectedCategory by remember { mutableStateOf(Category.SHOPPING) }
+    var selectedGoalId by remember { mutableStateOf(goals.firstOrNull()?.id) }
+
+    val totalIncome = remember(transactions) {
+        transactions.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }
+    }
+    val totalExpense = remember(transactions) {
+        transactions.filter { it.type == TransactionType.EXPENSE }.sumOf { it.amount }
+    }
+    val monthExpense = remember(transactions) {
+        transactions
+            .filter { it.type == TransactionType.EXPENSE && isTimestampInCurrentMonth(it.timestamp) }
+            .sumOf { it.amount }
+    }
+
+    val currentBalance = totalIncome - totalExpense
+    val price = priceText.toDoubleOrNull() ?: 0.0
+    val projectedBalance = currentBalance - price
+    val daysLeft = daysRemainingInCurrentMonth()
+    val hasBudget = monthlyBudget > 0.0
+    val projectedMonthExpense = monthExpense + price
+    val projectedCapPct = if (hasBudget) ((projectedMonthExpense / monthlyBudget) * 100.0).roundToInt() else 0
+    val projectedDailySafe = if (hasBudget) max(0.0, (monthlyBudget - projectedMonthExpense) / daysLeft) else 0.0
+
+    val verdictLabel: String
+    val verdictColor: Color
+    when {
+        price <= 0.0 -> {
+            verdictLabel = "Enter a Price"
+            verdictColor = primary
+        }
+        projectedBalance < 0.0 -> {
+            verdictLabel = "Over Liquid Balance"
+            verdictColor = Color(0xFFF43F5E)
+        }
+        hasBudget && projectedMonthExpense > monthlyBudget -> {
+            verdictLabel = "Exceeds Monthly Cap"
+            verdictColor = Color(0xFFF43F5E)
+        }
+        hasBudget && projectedMonthExpense > monthlyBudget * 0.85 -> {
+            verdictLabel = "Tight Margin"
+            verdictColor = Color(0xFFF59E0B)
+        }
+        else -> {
+            verdictLabel = "Safe Purchase"
+            verdictColor = Color(0xFF10B981)
+        }
+    }
+
+    val targetGoal = goals.firstOrNull { it.id == selectedGoalId } ?: goals.firstOrNull()
+    val goalImpactPct = if (targetGoal != null && targetGoal.targetAmount > 0.0 && price > 0.0) {
+        ((price / targetGoal.targetAmount) * 100.0).roundToInt()
+    } else {
+        null
+    }
+
+    VaultDialogShell(onDismiss = onDismiss) {
+        Text(
+            text = "Purchase Impact Simulator",
+            style = MaterialTheme.typography.headlineMedium.copy(fontSize = 20.sp),
+            color = Color.White
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = "Preview how a planned purchase affects your balance, cap, and goals before spending.",
+            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+            color = Color(0xFF8B93A7)
+        )
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        VaultTextField(
+            label = "Planned Item",
+            value = itemTitle,
+            placeholder = "Example: Mechanical Keyboard",
+            accent = primary,
+            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
+            onValueChange = { itemTitle = it }
+        )
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        VaultTextField(
+            label = "Estimated Price (${currency.symbol})",
+            value = priceText,
+            placeholder = "0.00",
+            accent = primary,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            onValueChange = { input -> priceText = input.filter { it.isDigit() || it == '.' } }
+        )
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            expenseCategories.forEach { cat ->
+                val isSelected = selectedCategory == cat
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (isSelected) cat.color.copy(alpha = 0.20f) else Color(0xFF151822))
+                        .border(
+                            0.8.dp,
+                            if (isSelected) cat.color else Color(0xFF242937),
+                            RoundedCornerShape(10.dp)
+                        )
+                        .clickable { selectedCategory = cat }
+                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                ) {
+                    Text(
+                        text = cat.title,
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                        color = if (isSelected) Color.White else Color(0xFF9EA7BD),
+                        maxLines = 1
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(14.dp))
+                .background(Color(0xFF141824))
+                .border(0.85.dp, verdictColor.copy(alpha = 0.45f), RoundedCornerShape(14.dp))
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "VERDICT",
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                    color = Color(0xFF8B93A7)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = verdictLabel,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = verdictColor,
+                    maxLines = 1
+                )
+            }
+
+            CreditDetailRow(
+                label = "Projected Balance",
+                value = formatMoney(projectedBalance, currency.symbol),
+                highlight = if (projectedBalance < 0.0) Color(0xFFF43F5E) else Color.White
+            )
+            if (hasBudget) {
+                CreditDetailRow(
+                    label = "Projected Cap",
+                    value = "$projectedCapPct% Used",
+                    highlight = if (projectedCapPct > 100) Color(0xFFF43F5E) else primary
+                )
+                CreditDetailRow(
+                    label = "New Daily Limit",
+                    value = "${formatMoney(projectedDailySafe, currency.symbol, false)} / Day"
+                )
+            }
+            if (targetGoal != null && goalImpactPct != null) {
+                CreditDetailRow(
+                    label = "Goal Impact",
+                    value = "$goalImpactPct% of ${targetGoal.title}",
+                    highlight = Color(targetGoal.colorHex)
+                )
+            }
+        }
+
+        if (goals.size > 1) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = "Compare Against Goal",
+                style = MaterialTheme.typography.labelSmall,
+                color = Color(0xFF9EA7BD)
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                goals.forEach { g ->
+                    val gAccent = Color(g.colorHex)
+                    val active = g.id == targetGoal?.id
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (active) gAccent.copy(alpha = 0.20f) else Color(0xFF151822))
+                            .border(
+                                0.8.dp,
+                                if (active) gAccent else Color(0xFF242937),
+                                RoundedCornerShape(10.dp)
+                            )
+                            .clickable { selectedGoalId = g.id }
+                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                    ) {
+                        Text(
+                            text = g.title,
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                            color = if (active) Color.White else Color(0xFF9EA7BD),
+                            maxLines = 1
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        if (price > 0.0 && targetGoal != null) {
+            Button(
+                onClick = {
+                    val label = itemTitle.trim().ifEmpty { "Planned Item" }
+                    onSaveInstead(targetGoal.id, price, label)
+                },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF10B981).copy(alpha = 0.20f),
+                    contentColor = Color(0xFF10B981)
+                ),
+                border = BorderStroke(0.85.dp, Color(0xFF10B981).copy(alpha = 0.50f))
+            ) {
+                Text(
+                    text = "Skip Purchase & Save to ${targetGoal.title}",
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            OutlinedButton(
+                onClick = onDismiss,
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(0.85.dp, Color(0xFF2B3140))
+            ) {
+                Text("Close", color = Color(0xFFB5BCD0))
+            }
+            Button(
+                onClick = {
+                    if (price > 0.0) {
+                        val label = itemTitle.trim().ifEmpty { selectedCategory.title }
+                        onRecordPurchase(label, price, selectedCategory)
+                    }
+                },
+                enabled = price > 0.0,
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = primary,
+                    contentColor = Color(0xFF07080B)
+                )
+            ) {
+                Text("Buy & Record", fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+@Composable
+private fun AddQuickPresetDialog(
+    currency: CurrencyOption,
+    primary: Color,
+    onDismiss: () -> Unit,
+    onSave: (String, Double, TransactionType, Category) -> Unit
+) {
+    var type by remember { mutableStateOf(TransactionType.EXPENSE) }
+    val availableCategories = remember(type) {
+        if (type == TransactionType.EXPENSE) {
+            Category.entries.filter { !it.isIncomeCategory }
+        } else {
+            Category.entries.filter { it.isIncomeCategory }
+        }
+    }
+    var selectedCategory by remember(type) { mutableStateOf(availableCategories.first()) }
+    var titleText by remember { mutableStateOf("") }
+    var amountText by remember { mutableStateOf("") }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    VaultDialogShell(onDismiss = onDismiss) {
+        Text(
+            text = "Create Quick Preset",
+            style = MaterialTheme.typography.headlineMedium.copy(fontSize = 20.sp),
+            color = Color.White
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = "Log recurring expenses or allowances in one tap from the Vault screen.",
+            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+            color = Color(0xFF8B93A7)
+        )
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color(0xFF151822))
+                .padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            listOf(
+                Pair(TransactionType.EXPENSE, "Expense"),
+                Pair(TransactionType.INCOME, "Income")
+            ).forEach { (option, label) ->
+                val active = type == option
+                val chipColor = if (option == TransactionType.EXPENSE) Color(0xFFF43F5E) else Color(0xFF10B981)
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(9.dp))
+                        .background(if (active) chipColor.copy(alpha = 0.20f) else Color.Transparent)
+                        .border(
+                            0.8.dp,
+                            if (active) chipColor.copy(alpha = 0.55f) else Color.Transparent,
+                            RoundedCornerShape(9.dp)
+                        )
+                        .clickable { type = option }
+                        .padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                        color = if (active) chipColor else Color(0xFF8B93A7)
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        VaultTextField(
+            label = "Preset Name",
+            value = titleText,
+            placeholder = "Example: Daily Commute",
+            accent = primary,
+            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
+            onValueChange = {
+                titleText = it
+                errorMessage = null
+            }
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        VaultTextField(
+            label = "Fixed Amount (${currency.symbol})",
+            value = amountText,
+            placeholder = "0.00",
+            accent = primary,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            onValueChange = { input ->
+                amountText = input.filter { it.isDigit() || it == '.' }
+                errorMessage = null
+            }
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            availableCategories.forEach { cat ->
+                val isSelected = selectedCategory == cat
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (isSelected) cat.color.copy(alpha = 0.20f) else Color(0xFF151822))
+                        .border(
+                            0.85.dp,
+                            if (isSelected) cat.color else Color(0xFF242937),
+                            RoundedCornerShape(10.dp)
+                        )
+                        .clickable { selectedCategory = cat }
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    Text(
+                        text = cat.title,
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                        color = if (isSelected) Color.White else Color(0xFF9EA7BD),
+                        maxLines = 1
+                    )
+                }
+            }
+        }
+
+        errorMessage?.let { msg ->
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = msg,
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+                color = Color(0xFFFB7185)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(18.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            OutlinedButton(
+                onClick = onDismiss,
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(0.85.dp, Color(0xFF2B3140))
+            ) {
+                Text("Cancel", color = Color(0xFFB5BCD0))
+            }
+            Button(
+                onClick = {
+                    val value = amountText.toDoubleOrNull()
+                    if (titleText.isBlank()) {
+                        errorMessage = "Please enter a preset name."
+                    } else if (value == null || value <= 0.0) {
+                        errorMessage = "Please enter a valid amount."
+                    } else {
+                        onSave(titleText.trim(), value, type, selectedCategory)
+                    }
+                },
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = primary,
+                    contentColor = Color(0xFF07080B)
+                )
+            ) {
+                Text("Save Preset", fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ImportBackupDialog(
+    primary: Color,
+    onDismiss: () -> Unit,
+    onImport: (BackupPayload) -> Unit
+) {
+    var jsonText by remember { mutableStateOf("") }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    VaultDialogShell(onDismiss = onDismiss) {
+        Text(
+            text = "Restore JSON Backup",
+            style = MaterialTheme.typography.headlineMedium.copy(fontSize = 20.sp),
+            color = Color.White
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = "Paste a JSON backup previously exported from FinVault to restore your ledger and goals.",
+            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+            color = Color(0xFF8B93A7)
+        )
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(140.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color(0xFF161A24))
+                .border(0.85.dp, Color(0xFF282E3E), RoundedCornerShape(12.dp))
+                .padding(12.dp)
+        ) {
+            if (jsonText.isEmpty()) {
+                Text(
+                    text = "Paste FinVault JSON Backup Here...",
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp
+                    ),
+                    color = Color(0xFF5D657A)
+                )
+            }
+            BasicTextField(
+                value = jsonText,
+                onValueChange = {
+                    jsonText = it
+                    errorMessage = null
+                },
+                cursorBrush = SolidColor(primary),
+                textStyle = TextStyle(
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp,
+                    color = Color.White
+                ),
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+
+        errorMessage?.let { msg ->
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = msg,
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+                color = Color(0xFFFB7185)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(18.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            OutlinedButton(
+                onClick = onDismiss,
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(0.85.dp, Color(0xFF2B3140))
+            ) {
+                Text("Cancel", color = Color(0xFFB5BCD0))
+            }
+            Button(
+                onClick = {
+                    val parsed = VaultStorage.parseFullBackupJson(jsonText)
+                    if (parsed == null) {
+                        errorMessage = "Invalid FinVault JSON backup format."
+                    } else {
+                        onImport(parsed)
+                    }
+                },
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = primary,
+                    contentColor = Color(0xFF07080B)
+                )
+            ) {
+                Text("Restore Data", fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+@Composable
+private fun CreditsAndLicenseDialog(
+    primary: Color,
+    secondary: Color,
+    onOpenGitHub: () -> Unit,
+    onCopyAttribution: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    VaultDialogShell(onDismiss = onDismiss) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            FinVaultBrandMark(
+                primary = primary,
+                secondary = secondary,
+                modifier = Modifier.size(48.dp)
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "FinVault v$APP_VERSION_NAME",
+                    style = MaterialTheme.typography.headlineMedium.copy(fontSize = 20.sp),
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = "Open-Source Personal Finance",
+                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+                    color = primary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(14.dp))
+                .background(Color(0xFF151822))
+                .border(0.75.dp, Color(0xFF242937), RoundedCornerShape(14.dp))
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(9.dp)
+        ) {
+            CreditDetailRow(label = "Author", value = DEVELOPER_NAME, highlight = primary)
+            CreditDetailRow(label = "Role", value = "Creator & Lead Developer")
+            CreditDetailRow(label = "Version", value = "v$APP_VERSION_NAME ($APP_BUILD_TRACK)")
+            CreditDetailRow(label = "Stack", value = "Kotlin • Compose • Material 3")
+            CreditDetailRow(label = "License", value = "MIT Open-Source License")
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        Text(
+            text = "VERSION HISTORY (MAJOR & MINOR)",
+            style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.0.sp),
+            color = Color(0xFF8B93A7)
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            ReleaseHistory.forEach { entry ->
+                val isMajor = entry.tier.contains("Major")
+                val badgeColor = if (isMajor) secondary else primary
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0xFF141721))
+                        .border(0.75.dp, Color(0xFF222735), RoundedCornerShape(12.dp))
+                        .padding(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = entry.version,
+                            style = MaterialTheme.typography.titleMedium.copy(fontSize = 13.5.sp),
+                            color = Color.White
+                        )
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(badgeColor.copy(alpha = 0.16f))
+                                .padding(horizontal = 7.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = entry.tier,
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                color = badgeColor
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = entry.summary,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 11.5.sp),
+                        color = Color(0xFF9EA7BD)
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        Text(
+            text = "MIT OPEN-SOURCE LICENSE",
+            style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.0.sp),
+            color = Color(0xFF8B93A7)
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color(0xFF0B0D13))
+                .border(0.75.dp, Color(0xFF202532), RoundedCornerShape(12.dp))
+                .padding(12.dp)
+        ) {
+            Text(
+                text = "Copyright (c) 2026 $DEVELOPER_NAME\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files, to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, subject to the inclusion of the above copyright notice.",
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    lineHeight = 16.sp
+                ),
+                color = Color(0xFF9EA7BD)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        OutlinedButton(
+            onClick = onOpenGitHub,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            border = BorderStroke(0.85.dp, primary.copy(alpha = 0.45f))
+        ) {
+            Text("View Repository on GitHub", color = primary, fontWeight = FontWeight.SemiBold)
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            OutlinedButton(
+                onClick = onCopyAttribution,
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(0.85.dp, Color(0xFF2B3140))
+            ) {
+                Text("Copy Credit", color = Color.White)
+            }
+            Button(
+                onClick = onDismiss,
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = primary,
+                    contentColor = Color(0xFF07080B)
+                )
+            ) {
+                Text("Close", fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+// Fixed: Label takes intrinsic width only so values never truncate prematurely
+@Composable
+private fun CreditDetailRow(
+    label: String,
+    value: String,
+    highlight: Color = Color.White
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.Top
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+            color = Color(0xFF8B93A7),
+            maxLines = 1
+        )
+        Spacer(modifier = Modifier.width(14.dp))
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium.copy(
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold
+            ),
+            color = highlight,
+            textAlign = TextAlign.End,
+            modifier = Modifier.weight(1f),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+@Composable
+private fun TransactionEditorDialog(
+    existingItem: TransactionItem?,
+    initialType: TransactionType,
+    currency: CurrencyOption,
+    primary: Color,
+    onDismiss: () -> Unit,
+    onDelete: (() -> Unit)?,
+    onDuplicate: (() -> Unit)?,
+    onSave: (String, Double, TransactionType, Category, String, Long) -> Unit
+) {
+    var type by remember { mutableStateOf(existingItem?.type ?: initialType) }
+    val availableCategories = remember(type) {
+        if (type == TransactionType.EXPENSE) {
+            Category.entries.filter { !it.isIncomeCategory }
+        } else {
+            Category.entries.filter { it.isIncomeCategory }
+        }
+    }
+    var selectedCategory by remember(type) {
+        mutableStateOf(
+            if (existingItem != null && existingItem.type == type) {
+                existingItem.category
+            } else {
+                availableCategories.first()
+            }
+        )
+    }
+    var titleText by remember { mutableStateOf(existingItem?.title ?: "") }
+    var amountText by remember {
+        mutableStateOf(
+            if (existingItem != null) {
+                if (existingItem.amount % 1.0 == 0.0) existingItem.amount.roundToInt().toString()
+                else existingItem.amount.toString()
+            } else {
+                ""
+            }
+        )
+    }
+    var noteText by remember { mutableStateOf(existingItem?.note ?: "") }
+    // Date selector: -1 = keep original (when editing), 0 = Today, 1 = Yesterday, 2 = 2 Days Ago
+    var datePreset by remember { mutableIntStateOf(if (existingItem != null) -1 else 0) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    val resolvedTimestamp = remember(datePreset, existingItem) {
+        val dayMs = 24L * 60L * 60L * 1000L
+        when (datePreset) {
+            -1 -> existingItem?.timestamp ?: System.currentTimeMillis()
+            0 -> System.currentTimeMillis()
+            1 -> System.currentTimeMillis() - dayMs
+            else -> System.currentTimeMillis() - 2L * dayMs
+        }
+    }
+
+    VaultDialogShell(onDismiss = onDismiss) {
+        Text(
+            text = when {
+                existingItem != null -> "Edit Transaction"
+                type == TransactionType.EXPENSE -> "Record Expense"
+                else -> "Record Income"
+            },
+            style = MaterialTheme.typography.headlineMedium.copy(fontSize = 20.sp),
+            color = Color.White
+        )
+        Spacer(modifier = Modifier.height(14.dp))
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color(0xFF151822))
+                .padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            listOf(
+                Pair(TransactionType.EXPENSE, "Expense"),
+                Pair(TransactionType.INCOME, "Income")
+            ).forEach { (option, label) ->
+                val active = type == option
+                val chipColor = if (option == TransactionType.EXPENSE) Color(0xFFF43F5E) else Color(0xFF10B981)
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(9.dp))
+                        .background(if (active) chipColor.copy(alpha = 0.20f) else Color.Transparent)
+                        .border(
+                            0.8.dp,
+                            if (active) chipColor.copy(alpha = 0.55f) else Color.Transparent,
+                            RoundedCornerShape(9.dp)
+                        )
+                        .clickable { type = option }
+                        .padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                        color = if (active) chipColor else Color(0xFF8B93A7)
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        VaultTextField(
+            label = "Title",
+            value = titleText,
+            placeholder = if (type == TransactionType.EXPENSE) "Example: Dinner Meal" else "Example: Weekly Allowance",
+            accent = primary,
+            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
+            onValueChange = {
+                titleText = it
+                errorMessage = null
+            }
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        VaultTextField(
+            label = "Amount (${currency.symbol})",
+            value = amountText,
+            placeholder = "0.00",
+            accent = primary,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            onValueChange = { input ->
+                amountText = input.filter { it.isDigit() || it == '.' }
+                errorMessage = null
+            }
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Text(
+            text = "Date (${formatDateLabel(resolvedTimestamp)})",
+            style = MaterialTheme.typography.labelSmall,
+            color = Color(0xFF9EA7BD)
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            val dateChoices = buildList {
+                if (existingItem != null) add(Pair(-1, "Keep Original"))
+                add(Pair(0, "Today"))
+                add(Pair(1, "Yesterday"))
+                add(Pair(2, "2 Days Ago"))
+            }
+            dateChoices.forEach { (key, label) ->
+                val active = datePreset == key
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (active) primary.copy(alpha = 0.20f) else Color(0xFF151822))
+                        .border(
+                            0.8.dp,
+                            if (active) primary else Color(0xFF242937),
+                            RoundedCornerShape(10.dp)
+                        )
+                        .clickable { datePreset = key }
+                        .padding(horizontal = 11.dp, vertical = 7.dp)
+                ) {
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                        color = if (active) Color.White else Color(0xFF9EA7BD),
+                        maxLines = 1
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Text(
+            text = "Category",
+            style = MaterialTheme.typography.labelSmall,
+            color = Color(0xFF9EA7BD)
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            availableCategories.forEach { cat ->
+                val isSelected = selectedCategory == cat
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (isSelected) cat.color.copy(alpha = 0.20f) else Color(0xFF151822))
+                        .border(
+                            0.85.dp,
+                            if (isSelected) cat.color else Color(0xFF242937),
+                            RoundedCornerShape(10.dp)
+                        )
+                        .clickable { selectedCategory = cat }
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    Text(
+                        text = cat.title,
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                        color = if (isSelected) Color.White else Color(0xFF9EA7BD),
+                        maxLines = 1
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        VaultTextField(
+            label = "Note (Optional)",
+            value = noteText,
+            placeholder = "Add a short detail",
+            accent = primary,
+            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+            onValueChange = { noteText = it }
+        )
+
+        errorMessage?.let { msg ->
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = msg,
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+                color = Color(0xFFFB7185)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(18.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            OutlinedButton(
+                onClick = onDismiss,
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(0.85.dp, Color(0xFF2B3140))
+            ) {
+                Text("Cancel", color = Color(0xFFB5BCD0))
+            }
+            Button(
+                onClick = {
+                    val parsedAmount = amountText.toDoubleOrNull()
+                    if (titleText.isBlank()) {
+                        errorMessage = "Please enter a transaction title."
+                    } else if (parsedAmount == null || parsedAmount <= 0.0) {
+                        errorMessage = "Please enter a valid amount greater than zero."
+                    } else {
+                        onSave(
+                            titleText.trim(),
+                            parsedAmount,
+                            type,
+                            selectedCategory,
+                            noteText.trim(),
+                            resolvedTimestamp
+                        )
+                    }
+                },
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = primary,
+                    contentColor = Color(0xFF07080B)
+                )
+            ) {
+                Text(if (existingItem != null) "Update" else "Save Entry", fontWeight = FontWeight.Bold)
+            }
+        }
+
+        if (onDuplicate != null || onDelete != null) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (onDuplicate != null) {
+                    OutlinedButton(
+                        onClick = onDuplicate,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(0.85.dp, primary.copy(alpha = 0.45f)),
+                        contentPadding = PaddingValues(vertical = 10.dp, horizontal = 6.dp)
+                    ) {
+                        Text("Duplicate", color = primary, maxLines = 1)
+                    }
+                }
+                if (onDelete != null) {
+                    OutlinedButton(
+                        onClick = onDelete,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(0.85.dp, Color(0xFFF43F5E).copy(alpha = 0.45f)),
+                        contentPadding = PaddingValues(vertical = 10.dp, horizontal = 6.dp)
+                    ) {
+                        Text("Delete", color = Color(0xFFFB7185), maxLines = 1)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GoalEditorDialog(
+    existingGoal: SavingsGoal?,
+    currency: CurrencyOption,
+    primary: Color,
+    onDismiss: () -> Unit,
+    onSave: (String, Double, Double, Long) -> Unit
+) {
+    val paletteColors = listOf(0xFF38BDF8L, 0xFF10B981L, 0xFF818CF8L, 0xFFF59E0BL, 0xFFFB7185L)
+    var titleText by remember { mutableStateOf(existingGoal?.title ?: "") }
+    var targetText by remember {
+        mutableStateOf(
+            if (existingGoal != null) existingGoal.targetAmount.roundToInt().toString() else ""
+        )
+    }
+    var initialText by remember { mutableStateOf("") }
+    var selectedColorHex by remember {
+        mutableStateOf(existingGoal?.colorHex ?: paletteColors.first())
+    }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    VaultDialogShell(onDismiss = onDismiss) {
+        Text(
+            text = if (existingGoal != null) "Edit Savings Goal" else "Create Savings Goal",
+            style = MaterialTheme.typography.headlineMedium.copy(fontSize = 20.sp),
+            color = Color.White
+        )
+        Spacer(modifier = Modifier.height(14.dp))
+
+        VaultTextField(
+            label = "Goal Name",
+            value = titleText,
+            placeholder = "Example: New Laptop Fund",
+            accent = primary,
+            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
+            onValueChange = {
+                titleText = it
+                errorMessage = null
+            }
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        VaultTextField(
+            label = "Target Amount (${currency.symbol})",
+            value = targetText,
+            placeholder = "10000",
+            accent = primary,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            onValueChange = { input ->
+                targetText = input.filter { it.isDigit() || it == '.' }
+                errorMessage = null
+            }
+        )
+
+        if (existingGoal == null) {
+            Spacer(modifier = Modifier.height(12.dp))
+
+            VaultTextField(
+                label = "Starting Deposit (${currency.symbol}, Optional)",
+                value = initialText,
+                placeholder = "0",
+                accent = primary,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                onValueChange = { input ->
+                    initialText = input.filter { it.isDigit() || it == '.' }
+                }
+            )
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        Text(
+            text = "Accent Color",
+            style = MaterialTheme.typography.labelSmall,
+            color = Color(0xFF9EA7BD)
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            paletteColors.forEach { hex ->
+                val color = Color(hex)
+                val selected = hex == selectedColorHex
+                Box(
+                    modifier = Modifier
+                        .size(30.dp)
+                        .clip(CircleShape)
+                        .background(color)
+                        .border(
+                            width = if (selected) 2.5.dp else 0.dp,
+                            color = if (selected) Color.White else Color.Transparent,
+                            shape = CircleShape
+                        )
+                        .clickable { selectedColorHex = hex }
+                )
+            }
+        }
+
+        errorMessage?.let { msg ->
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = msg,
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+                color = Color(0xFFFB7185)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(18.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            OutlinedButton(
+                onClick = onDismiss,
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(0.85.dp, Color(0xFF2B3140))
+            ) {
+                Text("Cancel", color = Color(0xFFB5BCD0))
+            }
+            Button(
+                onClick = {
+                    val target = targetText.toDoubleOrNull()
+                    val initial = initialText.toDoubleOrNull() ?: 0.0
+                    if (titleText.isBlank()) {
+                        errorMessage = "Please enter a name for your goal."
+                    } else if (target == null || target <= 0.0) {
+                        errorMessage = "Please enter a valid target amount."
+                    } else {
+                        onSave(
+                            titleText.trim(),
+                            target,
+                            min(initial, target * 10.0),
+                            selectedColorHex
+                        )
+                    }
+                },
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = primary,
+                    contentColor = Color(0xFF07080B)
+                )
+            ) {
+                Text(if (existingGoal != null) "Save Changes" else "Create Goal", fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+@Composable
+private fun DepositGoalDialog(
+    goal: SavingsGoal,
+    currency: CurrencyOption,
+    primary: Color,
+    onDismiss: () -> Unit,
+    onConfirm: (Double) -> Unit
+) {
+    var amountText by remember { mutableStateOf("") }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    val accent = Color(goal.colorHex)
+
+    VaultDialogShell(onDismiss = onDismiss) {
+        Text(
+            text = "Deposit to Goal",
+            style = MaterialTheme.typography.headlineMedium.copy(fontSize = 20.sp),
+            color = Color.White
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = "${goal.title} • Currently ${formatMoney(goal.savedAmount, currency.symbol, false)}",
+            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
+            color = accent
+        )
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            listOf(100, 250, 500, 1000).forEach { preset ->
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(accent.copy(alpha = 0.14f))
+                        .border(0.8.dp, accent.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
+                        .clickable {
+                            amountText = preset.toString()
+                            errorMessage = null
+                        }
+                        .padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "+${currency.symbol}$preset",
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                        color = accent,
+                        maxLines = 1
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        VaultTextField(
+            label = "Deposit Amount (${currency.symbol})",
+            value = amountText,
+            placeholder = "Enter amount",
+            accent = primary,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            onValueChange = { input ->
+                amountText = input.filter { it.isDigit() || it == '.' }
+                errorMessage = null
+            }
+        )
+
+        errorMessage?.let { msg ->
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = msg,
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+                color = Color(0xFFFB7185)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(18.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            OutlinedButton(
+                onClick = onDismiss,
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(0.85.dp, Color(0xFF2B3140))
+            ) {
+                Text("Cancel", color = Color(0xFFB5BCD0))
+            }
+            Button(
+                onClick = {
+                    val value = amountText.toDoubleOrNull()
+                    if (value == null || value <= 0.0) {
+                        errorMessage = "Please enter a valid deposit amount."
+                    } else {
+                        onConfirm(value)
+                    }
+                },
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = accent,
+                    contentColor = Color(0xFF07080B)
+                )
+            ) {
+                Text("Confirm", fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+@Composable
+private fun EditBudgetDialog(
+    currentBudget: Double,
+    currency: CurrencyOption,
+    primary: Color,
+    onDismiss: () -> Unit,
+    onSave: (Double) -> Unit
+) {
+    var budgetText by remember {
+        mutableStateOf(if (currentBudget > 0.0) currentBudget.roundToInt().toString() else "")
+    }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    VaultDialogShell(onDismiss = onDismiss) {
+        Text(
+            text = "Monthly Spending Cap",
+            style = MaterialTheme.typography.headlineMedium.copy(fontSize = 20.sp),
+            color = Color.White
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = "Set your target spending limit for the month, or enter 0 to disable the cap.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = Color(0xFF9EA7BD)
+        )
+        Spacer(modifier = Modifier.height(14.dp))
+
+        VaultTextField(
+            label = "Monthly Cap (${currency.symbol})",
+            value = budgetText,
+            placeholder = "Example: 5000",
+            accent = primary,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            onValueChange = { input ->
+                budgetText = input.filter { it.isDigit() || it == '.' }
+                errorMessage = null
+            }
+        )
+
+        errorMessage?.let { msg ->
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = msg,
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+                color = Color(0xFFFB7185)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(18.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            OutlinedButton(
+                onClick = onDismiss,
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(0.85.dp, Color(0xFF2B3140))
+            ) {
+                Text("Cancel", color = Color(0xFFB5BCD0))
+            }
+            Button(
+                onClick = {
+                    val value = budgetText.toDoubleOrNull()
+                    if (value == null || value < 0.0) {
+                        errorMessage = "Please enter 0 or a valid positive limit."
+                    } else {
+                        onSave(value)
+                    }
+                },
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = primary,
+                    contentColor = Color(0xFF07080B)
+                )
+            ) {
+                Text("Save Cap", fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ConfirmResetDialog(
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    VaultDialogShell(onDismiss = onDismiss) {
+        Text(
+            text = "Clear All Local Data?",
+            style = MaterialTheme.typography.headlineMedium.copy(fontSize = 20.sp),
+            color = Color.White
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = "This action permanently removes all transactions, savings goals, quick presets, and your monthly cap from this device.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = Color(0xFF9EA7BD)
+        )
+        Spacer(modifier = Modifier.height(18.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            OutlinedButton(
+                onClick = onDismiss,
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(0.85.dp, Color(0xFF2B3140))
+            ) {
+                Text("Cancel", color = Color(0xFFB5BCD0))
+            }
+            Button(
+                onClick = onConfirm,
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFFF43F5E),
+                    contentColor = Color.White
+                )
+            ) {
+                Text("Clear Data", fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+@Composable
+private fun VaultDialogShell(
+    onDismiss: () -> Unit,
+    content: @Composable () -> Unit
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .clip(RoundedCornerShape(22.dp))
+                .background(Color(0xFF10131B))
+                .border(0.85.dp, Color(0xFF252A38), RoundedCornerShape(22.dp))
+                .verticalScroll(rememberScrollState())
+                .padding(20.dp)
+        ) {
+            content()
+        }
+    }
+}
+
+@Composable
+private fun VaultTextField(
+    label: String,
+    value: String,
+    placeholder: String,
+    accent: Color,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    onValueChange: (String) -> Unit
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = Color(0xFF9EA7BD)
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color(0xFF161A24))
+                .border(0.85.dp, Color(0xFF282E3E), RoundedCornerShape(12.dp))
+                .padding(horizontal = 14.dp, vertical = 12.dp)
+        ) {
+            if (value.isEmpty()) {
+                Text(
+                    text = placeholder,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color(0xFF5D657A)
+                )
+            }
+            BasicTextField(
+                value = value,
+                onValueChange = onValueChange,
+                singleLine = true,
+                keyboardOptions = keyboardOptions,
+                cursorBrush = SolidColor(accent),
+                textStyle = TextStyle(
+                    fontFamily = FontFamily.SansSerif,
+                    fontSize = 15.sp,
+                    color = Color.White,
+                    fontWeight = FontWeight.Medium
+                ),
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    }
+}
+
+@Composable
+private fun SurfaceCard(
+    modifier: Modifier = Modifier,
+    content: @Composable BoxScope.() -> Unit
+) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(Color(0xFF101219))
+            .border(0.75.dp, Color(0xFF1E222E), RoundedCornerShape(20.dp)),
+        content = content
+    )
+}
+
+// Matching FinVault Hexagonal Shield & FV Monogram Brand Emblem
+@Composable
+private fun FinVaultBrandMark(
+    primary: Color,
+    secondary: Color,
+    modifier: Modifier = Modifier
+) {
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+        val cx = w * 0.5f
+        val cy = h * 0.5f
+        val outerR = min(w, h) * 0.48f
+        val innerR = outerR * 0.89f
+
+        fun hexPath(r: Float): Path {
+            val path = Path()
+            for (i in 0 until 6) {
+                val rad = (-90.0 + i * 60.0) * PI / 180.0
+                val x = cx + (r * cos(rad)).toFloat()
+                val y = cy + (r * sin(rad)).toFloat()
+                if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            }
+            path.close()
+            return path
+        }
+
+        drawPath(
+            path = hexPath(outerR),
+            brush = Brush.linearGradient(listOf(primary, secondary))
+        )
+        drawPath(
+            path = hexPath(innerR),
+            color = Color(0xFF0D121E)
+        )
+
+        fun pt(nx: Float, ny: Float) = Offset(w * nx, h * ny)
+
+        val fPath = Path().apply {
+            moveTo(pt(0.32f, 0.30f).x, pt(0.32f, 0.30f).y)
+            lineTo(pt(0.68f, 0.30f).x, pt(0.68f, 0.30f).y)
+            lineTo(pt(0.63f, 0.39f).x, pt(0.63f, 0.39f).y)
+            lineTo(pt(0.41f, 0.39f).x, pt(0.41f, 0.39f).y)
+            lineTo(pt(0.41f, 0.46f).x, pt(0.41f, 0.46f).y)
+            lineTo(pt(0.59f, 0.46f).x, pt(0.59f, 0.46f).y)
+            lineTo(pt(0.55f, 0.54f).x, pt(0.55f, 0.54f).y)
+            lineTo(pt(0.41f, 0.54f).x, pt(0.41f, 0.54f).y)
+            lineTo(pt(0.41f, 0.57f).x, pt(0.41f, 0.57f).y)
+            lineTo(pt(0.50f, 0.70f).x, pt(0.50f, 0.70f).y)
+            lineTo(pt(0.50f, 0.79f).x, pt(0.50f, 0.79f).y)
+            lineTo(pt(0.32f, 0.59f).x, pt(0.32f, 0.59f).y)
+            close()
+        }
+        drawPath(path = fPath, color = Color(0xFFEAF7FF))
+
+        val vWing = Path().apply {
+            moveTo(pt(0.50f, 0.70f).x, pt(0.50f, 0.70f).y)
+            lineTo(pt(0.61f, 0.50f).x, pt(0.61f, 0.50f).y)
+            lineTo(pt(0.69f, 0.50f).x, pt(0.69f, 0.50f).y)
+            lineTo(pt(0.50f, 0.79f).x, pt(0.50f, 0.79f).y)
+            close()
+        }
+        drawPath(
+            path = vWing,
+            brush = Brush.verticalGradient(listOf(primary, Color(0xFF10B981)))
+        )
+    }
+}
+
+@Composable
+private fun ChevronLeftGlyph(color: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        val path = Path().apply {
+            moveTo(size.width * 0.68f, size.height * 0.16f)
+            lineTo(size.width * 0.30f, size.height * 0.50f)
+            lineTo(size.width * 0.68f, size.height * 0.84f)
+        }
+        drawPath(path, color = color, style = Stroke(width = 1.8.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+    }
+}
+
+@Composable
+private fun ChevronRightGlyph(color: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        val path = Path().apply {
+            moveTo(size.width * 0.32f, size.height * 0.16f)
+            lineTo(size.width * 0.70f, size.height * 0.50f)
+            lineTo(size.width * 0.32f, size.height * 0.84f)
+        }
+        drawPath(path, color = color, style = Stroke(width = 1.8.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+    }
+}
+
+@Composable
+private fun VaultGlyph(color: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        val stroke = 1.7.dp.toPx()
+        drawRoundRect(
+            color = color,
+            topLeft = Offset(size.width * 0.10f, size.height * 0.18f),
+            size = Size(size.width * 0.80f, size.height * 0.64f),
+            cornerRadius = CornerRadius(3.5.dp.toPx(), 3.5.dp.toPx()),
+            style = Stroke(width = stroke)
+        )
+        drawLine(
+            color = color,
+            start = Offset(size.width * 0.10f, size.height * 0.40f),
+            end = Offset(size.width * 0.90f, size.height * 0.40f),
+            strokeWidth = stroke
+        )
+        drawCircle(
+            color = color,
+            radius = 1.8.dp.toPx(),
+            center = Offset(size.width * 0.72f, size.height * 0.60f)
+        )
+    }
+}
+
+@Composable
+private fun InsightsGlyph(color: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        val stroke = 1.8.dp.toPx()
+        val path = Path().apply {
+            moveTo(size.width * 0.10f, size.height * 0.74f)
+            lineTo(size.width * 0.36f, size.height * 0.48f)
+            lineTo(size.width * 0.58f, size.height * 0.60f)
+            lineTo(size.width * 0.90f, size.height * 0.24f)
+        }
+        drawPath(path, color = color, style = Stroke(width = stroke, cap = StrokeCap.Round, join = StrokeJoin.Round))
+    }
+}
+
+@Composable
+private fun TargetGlyph(color: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        val stroke = 1.6.dp.toPx()
+        drawCircle(color = color, radius = size.minDimension * 0.42f, style = Stroke(width = stroke))
+        drawCircle(color = color, radius = size.minDimension * 0.18f, style = Stroke(width = stroke))
+    }
+}
+
+@Composable
+private fun SlidersGlyph(color: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        val stroke = 1.6.dp.toPx()
+        drawLine(color, Offset(size.width * 0.12f, size.height * 0.32f), Offset(size.width * 0.88f, size.height * 0.32f), stroke, StrokeCap.Round)
+        drawLine(color, Offset(size.width * 0.12f, size.height * 0.68f), Offset(size.width * 0.88f, size.height * 0.68f), stroke, StrokeCap.Round)
+        drawCircle(color = color, radius = 2.6.dp.toPx(), center = Offset(size.width * 0.64f, size.height * 0.32f))
+        drawCircle(color = color, radius = 2.6.dp.toPx(), center = Offset(size.width * 0.36f, size.height * 0.68f))
+    }
+}
+
+@Composable
+private fun ScaleGlyph(color: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        val stroke = 1.6.dp.toPx()
+        drawLine(color, Offset(size.width * 0.5f, size.height * 0.16f), Offset(size.width * 0.5f, size.height * 0.84f), stroke, StrokeCap.Round)
+        drawLine(color, Offset(size.width * 0.18f, size.height * 0.34f), Offset(size.width * 0.82f, size.height * 0.34f), stroke, StrokeCap.Round)
+        drawLine(color, Offset(size.width * 0.30f, size.height * 0.84f), Offset(size.width * 0.70f, size.height * 0.84f), stroke, StrokeCap.Round)
+        drawCircle(color = color, radius = 2.3.dp.toPx(), center = Offset(size.width * 0.20f, size.height * 0.54f), style = Stroke(width = stroke))
+        drawCircle(color = color, radius = 2.3.dp.toPx(), center = Offset(size.width * 0.80f, size.height * 0.54f), style = Stroke(width = stroke))
+    }
+}
+
+@Composable
+private fun SearchGlyph(color: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        val stroke = 1.7.dp.toPx()
+        val r = size.minDimension * 0.34f
+        val c = Offset(size.width * 0.42f, size.height * 0.42f)
+        drawCircle(color = color, radius = r, center = c, style = Stroke(width = stroke))
+        drawLine(
+            color = color,
+            start = Offset(c.x + r * 0.72f, c.y + r * 0.72f),
+            end = Offset(size.width * 0.88f, size.height * 0.88f),
+            strokeWidth = stroke,
+            cap = StrokeCap.Round
+        )
+    }
+}
+
+@Composable
+private fun CloseGlyph(color: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        val stroke = 1.7.dp.toPx()
+        drawLine(color, Offset(0f, 0f), Offset(size.width, size.height), stroke, StrokeCap.Round)
+        drawLine(color, Offset(size.width, 0f), Offset(0f, size.height), stroke, StrokeCap.Round)
+    }
+}
+
+@Composable
+private fun EyeGlyph(hidden: Boolean, color: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        val stroke = 1.6.dp.toPx()
+        val path = Path().apply {
+            moveTo(size.width * 0.08f, size.height * 0.5f)
+            cubicTo(size.width * 0.30f, size.height * 0.14f, size.width * 0.70f, size.height * 0.14f, size.width * 0.92f, size.height * 0.5f)
+            cubicTo(size.width * 0.70f, size.height * 0.86f, size.width * 0.30f, size.height * 0.86f, size.width * 0.08f, size.height * 0.5f)
+        }
+        drawPath(path, color = color, style = Stroke(width = stroke, join = StrokeJoin.Round))
+        drawCircle(color = color, radius = size.minDimension * 0.14f)
+        if (hidden) {
+            drawLine(
+                color = color,
+                start = Offset(size.width * 0.16f, size.height * 0.84f),
+                end = Offset(size.width * 0.84f, size.height * 0.16f),
+                strokeWidth = stroke,
+                cap = StrokeCap.Round
+            )
+        }
+    }
+}
+
+@Composable
+private fun SparklineGlyph(color: Color, upward: Boolean, modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        val stroke = 1.7.dp.toPx()
+        val path = Path().apply {
+            if (upward) {
+                moveTo(0f, size.height * 0.80f)
+                lineTo(size.width * 0.35f, size.height * 0.55f)
+                lineTo(size.width * 0.62f, size.height * 0.68f)
+                lineTo(size.width, size.height * 0.18f)
+            } else {
+                moveTo(0f, size.height * 0.22f)
+                lineTo(size.width * 0.35f, size.height * 0.52f)
+                lineTo(size.width * 0.62f, size.height * 0.38f)
+                lineTo(size.width, size.height * 0.82f)
+            }
+        }
+        drawPath(path, color = color, style = Stroke(width = stroke, cap = StrokeCap.Round, join = StrokeJoin.Round))
+    }
+}
+
+@Composable
+private fun PlusGlyph(color: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        val stroke = 1.9.dp.toPx()
+        drawLine(color, Offset(size.width * 0.5f, 0f), Offset(size.width * 0.5f, size.height), stroke, StrokeCap.Round)
+        drawLine(color, Offset(0f, size.height * 0.5f), Offset(size.width, size.height * 0.5f), stroke, StrokeCap.Round)
+    }
+}
+
+@Composable
+private fun ArrowDownGlyph(color: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        val stroke = 1.8.dp.toPx()
+        drawLine(color, Offset(size.width * 0.5f, size.height * 0.14f), Offset(size.width * 0.5f, size.height * 0.84f), stroke, StrokeCap.Round)
+        val path = Path().apply {
+            moveTo(size.width * 0.22f, size.height * 0.56f)
+            lineTo(size.width * 0.5f, size.height * 0.86f)
+            lineTo(size.width * 0.78f, size.height * 0.56f)
+        }
+        drawPath(path, color = color, style = Stroke(width = stroke, cap = StrokeCap.Round, join = StrokeJoin.Round))
+    }
+}
+
+@Composable
+private fun ArrowUpGlyph(color: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        val stroke = 1.8.dp.toPx()
+        drawLine(color, Offset(size.width * 0.5f, size.height * 0.86f), Offset(size.width * 0.5f, size.height * 0.16f), stroke, StrokeCap.Round)
+        val path = Path().apply {
+            moveTo(size.width * 0.22f, size.height * 0.44f)
+            lineTo(size.width * 0.5f, size.height * 0.14f)
+            lineTo(size.width * 0.78f, size.height * 0.44f)
+        }
+        drawPath(path, color = color, style = Stroke(width = stroke, cap = StrokeCap.Round, join = StrokeJoin.Round))
+    }
+}
