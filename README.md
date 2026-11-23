@@ -76,6 +76,17 @@ FinVault/
 └── README.md
 ```
 
+## Installing & Upgrading
+
+1. Download the latest signed APK from [GitHub Releases](https://github.com/YuriRinkashime/FinVault/releases/latest) and tap it to install (or update directly over an existing signed release).
+2. **Upgrading from an older pre-release or debug build (`v2.2.0` or earlier)?**
+   - Try installing the new APK directly first.
+   - If Android displays ***"App not installed as package conflicts with an existing package"*** (caused by a different signing key between earlier debug/pre-release APKs and the signed production release):
+     1. Open your existing FinVault app → **Settings → Offline Backup & Export → Copy Backup** (save the JSON text in a Notes app).
+     2. Uninstall the old build.
+     3. Install the new **`FinVault Yuri`** APK and complete the Setup Wizard.
+     4. Open **Settings → Offline Backup & Export → Restore JSON → Paste → Restore Data** (legacy `v2.1.0`/`v2.2.0` backups are fully supported).
+
 ## Building from Source
 
 Want to inspect, customize, or compile **FinVault Yuri** yourself? You do not need any special AI tools or proprietary setup—just the source code and **CodeAssist** (Mobile or PC) or **Android Studio**.
