@@ -49,7 +49,7 @@ This is the fastest way to compile **FinVault Yuri** directly on an Android devi
 
 ### Step 3: Compile & Install
 - **Debug Build (Quick Testing):** Tap **Run (▶)** → **Run Debug · app**. CodeAssist will compile and prompt you to install `app-debug.apk`.
-- **Release Build (Production APK):** Configure a signing keystore in CodeAssist's Build/Signing settings, then run **Run Release · app**. The compiled APK is output to:
+- **Release Build (Production APK):** Create or import a keystore in **Settings → Keystore Manager**, assign it under **`app` → Signing → `release`** (or keep `debug (default)` for personal testing—see **[SIGNING.md](SIGNING.md)** for full instructions), then run **Run Release · app**. The compiled APK is output to:
   ```text
   app/build/outputs/apk/release/app-release.apk
   ```
@@ -72,7 +72,7 @@ Because CodeAssist Desktop requires a `.platform/` metadata directory to list a 
 
 ### Step 2: Build the APK
 1. Re-open **`finvault`** inside **CodeAssist Desktop**.
-2. Run **Build / Run Debug · app** or **Build / Run Release · app**.
+2. Assign your keystore (or `debug (default)`) under **`app` → Signing → `release`** (see **[SIGNING.md](SIGNING.md)**), then run **Build / Run Debug · app** or **Build / Run Release · app**.
 3. Locate your compiled APK at:
    - Debug: `app/build/outputs/apk/debug/app-debug.apk`
    - Release: `app/build/outputs/apk/release/app-release.apk`

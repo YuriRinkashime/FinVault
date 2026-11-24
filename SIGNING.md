@@ -13,7 +13,7 @@ You can verify that a downloaded APK is an authentic official release before ins
 | Field | Official Release Value |
 | :--- | :--- |
 | **Signer DN** | `CN=Yuri Rinkashime, O=finvault-yuri-release` |
-| **SHA-256 Digest** | `D6:B5:C4:A5:44:F4:CB:6D:D1:AA:5F:F0:B5:8B:03:A5:EF:FE:87:70:F5:B4:32:F8:69:6F:59:6F:6B:12:7F:70` |
+| **Signing Certificate SHA-256** | `D6:B5:C4:A5:44:F4:CB:6D:D1:AA:5F:F0:B5:8B:03:A5:EF:FE:87:70:F5:B4:32:F8:69:6F:59:6F:6B:12:7F:70` |
 
 Verify any downloaded APK using Google's `apksigner` (Termux or PC Android SDK Build-Tools):
 
@@ -56,7 +56,14 @@ If you plan to distribute your own fork or keep consistent in-place updates for 
 - **In CodeAssist:** Open the **`app`** module → **Signing** tab → under **`release`**, select your newly created or imported keystore.
 - **Or Sign Externally with `apksigner` (Keeps `app/module.toml` Clean):**
   ```bash
-  apksigner sign     --ks path/to/my-finvault-release.jks     --ks-key-alias myalias     --v1-signing-enabled true     --v2-signing-enabled true     --v3-signing-enabled true     --out FinVault-Fork.apk     app/build/outputs/apk/release/app-release-unsigned.apk
+  apksigner sign \
+    --ks path/to/my-finvault-release.jks \
+    --ks-key-alias myalias \
+    --v1-signing-enabled true \
+    --v2-signing-enabled true \
+    --v3-signing-enabled true \
+    --out FinVault-Fork.apk \
+    app/build/outputs/apk/release/app-release-unsigned.apk
   ```
 - **In Android Studio (Gradle):** Configure a standard `signingConfigs` block in your local `app/build.gradle.kts` pointing to your `.jks` file and passwords stored in `local.properties` (never committed to Git).
 
