@@ -10,7 +10,8 @@ All notable changes to **FinVault Yuri** follow Semantic Versioning (`MAJOR.MINO
 
 ### Fixed
 - **Full Scrollable Release Notes & Action Bar Layout:** Removed the 1,200-character truncation limit in `UpdateAvailableDialog` so complete release notes display cleanly inside a dedicated scrollable viewport while keeping the **Download APK**, **Later**, and **Open GitHub** buttons permanently visible at the bottom.
-- **Unified Release Keystore Baseline:** Standardized production APK signing under a single permanent release keystore across mobile and PC builds so all future updates install cleanly in-place without package signature conflicts.
+- **Unified Release Keystore Baseline:** Official releases from `v2.3.2` onward are signed with Yuri Rinkashime's permanent private release keystore (SHA-256: `D6:B5:C4:A5...6B:12:7F:70`) across both mobile and PC builds so all future updates install cleanly in-place. Users upgrading from `v2.3.1` or earlier need a one-time **Copy Backup → Uninstall → Install `v2.3.2` → Restore JSON**.
+- **Forking & Custom Signing Documentation:** Added [SIGNING.md](SIGNING.md) explaining how developers who fork or self-build **FinVault Yuri** can switch to their own release keystore or fall back to default debug keys.
 
 ---
 

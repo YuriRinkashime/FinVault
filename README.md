@@ -72,6 +72,7 @@ FinVault/
 │               └── themes.xml
 ├── BUILDING.md                        # Step-by-Step Source Build Guide (CodeAssist & Android Studio)
 ├── CHANGELOG.md                       # Separated Major, Minor & Patch Release History
+├── SIGNING.md                         # Release Key Verification & Fork Signing Guide
 ├── LICENSE                            # MIT Open-Source License
 └── README.md
 ```
@@ -98,7 +99,7 @@ Want to inspect, customize, or compile **FinVault Yuri** yourself? You do not ne
 - **CodeAssist (Android Phone & Windows Desktop):** Uses `app/module.toml` directly (`com.yuri.finvault`, `minSdk 26`, `targetSdk 36`) with all source code in `app/src/main/kotlin/com/yuri/finvault/MainActivity.kt`.
 - **Android Studio (Gradle):** Drop `MainActivity.kt`, `AndroidManifest.xml`, and `res/` into a standard Jetpack Compose project.
 
-See the complete step-by-step instructions, `.platform/` setup tips, ADB install commands, and troubleshooting in **[BUILDING.md](BUILDING.md)**.
+See the complete step-by-step instructions, `.platform/` setup tips, ADB install commands, and troubleshooting in **[BUILDING.md](BUILDING.md)**. Official APKs are signed with the developer's private release key—if you plan to fork or compile your own build, see **[SIGNING.md](SIGNING.md)** for instructions on switching to your own keystore or default debug keys.
 
 ## Author & Credits
 
