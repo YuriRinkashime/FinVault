@@ -14,10 +14,18 @@ import androidx.activity.compose.setContent
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -74,6 +82,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -92,6 +101,8 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -140,15 +151,16 @@ import kotlin.math.truncate
 // ============================================================================
 private const val APP_VERSION_MAJOR = 2
 private const val APP_VERSION_MINOR = 3
-private const val APP_VERSION_PATCH = 0
-private const val APP_VERSION_CODE = 5
+private const val APP_VERSION_PATCH = 1
+private const val APP_VERSION_CODE = 6
 private const val APP_VERSION_NAME = "$APP_VERSION_MAJOR.$APP_VERSION_MINOR.$APP_VERSION_PATCH"
-private const val APP_BUILD_TRACK = "Minor Release"
+private const val APP_BUILD_TRACK = "Patch Release"
 private const val MAX_FINANCE_AMOUNT = 999_999_999_999.99
 
 private const val APP_BRAND_NAME = "FinVault Yuri"
 private const val DEVELOPER_NAME = "Yuri Rinkashime"
 private const val GITHUB_REPO_URL = "https://github.com/YuriRinkashime/FinVault"
+private const val GITHUB_CHANGELOG_URL = "https://github.com/YuriRinkashime/FinVault/blob/main/CHANGELOG.md"
 private const val GITHUB_RELEASES_URL = "https://github.com/YuriRinkashime/FinVault/releases"
 private const val GITHUB_RELEASES_API_URL = "https://api.github.com/repos/YuriRinkashime/FinVault/releases?per_page=15"
 private const val GITHUB_ISSUES_URL = "https://github.com/YuriRinkashime/FinVault/issues/new"
@@ -312,42 +324,46 @@ private sealed class UpdateCheckResult {
 }
 
 @Immutable
-private data class ReleaseNoteEntry(
-    val version: String,
-    val tier: String,
-    val summary: String
+private data class ChangelogSection(
+    val label: String,
+    val accentHex: Long,
+    val items: List<String>
 )
 
-private val ReleaseHistory = listOf(
-    ReleaseNoteEntry(
-        version = "v2.3.0",
-        tier = "Minor Release",
-        summary = "Rebranded to FinVault Yuri for our first Stable Production Release: Dual-Vault Liquid & Goal Reserve architecture with direct Set Balance sync, Expense-to-Goal deposits & Goal withdrawals, GitHub Release Updater with secret Developer Settings pre-release channel, First-Time Setup Wizard (preserving v2.2.0 data), Impulse Cooling-Off Quarantine Vault, Time-Cost work-hours converter, Monthly Discipline Heatmap, and global Smooth Animations toggle."
+@Immutable
+private data class GoalCelebrationEvent(
+    val id: Long,
+    val goalTitle: String,
+    val targetAmount: Double,
+    val savedAmount: Double,
+    val accentColorHex: Long
+)
+
+@Immutable
+private data class CapWarningEvent(
+    val id: Long,
+    val isExceeded: Boolean,
+    val ratio: Double,
+    val monthExpense: Double,
+    val monthlyBudget: Double
+)
+
+private val LatestReleaseHighlights = listOf(
+    ChangelogSection(
+        label = "What's New",
+        accentHex = 0xFF10B981L,
+        items = listOf(
+            "Goal Milestone Celebration: Animated titanium confetti burst and milestone card trigger whenever a Savings Goal reaches 100%.",
+            "Monthly Cap Warning Animation: Animated amber and crimson alerts plus pulsing ledger feedback trigger when spending nears (80%+) or exceeds (100%+) your Monthly Cap."
+        )
     ),
-    ReleaseNoteEntry(
-        version = "v2.2.1",
-        tier = "Patch Release",
-        summary = "Production stability hardening: monotonic unique IDs to prevent list key crashes, strict JSON backup validation with one-tap clipboard paste, exact double monthly cap storage, DST-safe trend/date math, realistic daily burn & cash runway, dark cold-start theme, keyboard-safe dialogs, goal/preset delete confirmation, and 120Hz state optimization."
-    ),
-    ReleaseNoteEntry(
-        version = "v2.2.0",
-        tier = "Minor Release",
-        summary = "Custom FinVault emblem & adaptive launcher icon, Month Navigator, Undo Delete banner, transaction date picker & duplicate tool, editable Savings Goals, No-Spend Streak insights, Developer Contact & Bug Report hub, and privacy-safe crash/diagnostic logging."
-    ),
-    ReleaseNoteEntry(
-        version = "v2.1.0",
-        tier = "Minor Upgrade",
-        summary = "Clean blank first boot, Purchase Impact Simulator with impulse-to-savings transfer, Safe-to-Spend daily allowance, Quick Presets, Vault Health Score, search filter, JSON/CSV export, and layout polish."
-    ),
-    ReleaseNoteEntry(
-        version = "v2.0.0",
-        tier = "Major Release",
-        summary = "Original Matte Titanium interface, LazyColumn 120Hz optimization, Privacy Masking, Insights trend curve, Milestone Goals, and open-source MIT credits."
-    ),
-    ReleaseNoteEntry(
-        version = "v1.0.0",
-        tier = "Major Release",
-        summary = "Initial offline budget ledger, expense categories, and local JSON persistence."
+    ChangelogSection(
+        label = "Updated",
+        accentHex = 0xFF38BDF8L,
+        items = listOf(
+            "Smart Tracking Origin: Monthly Discipline Heatmap and No-Spend Streak now start on the first day you record a value, marking earlier days cleanly as Untracked.",
+            "Streamlined In-App Changelog: About dialog displays only the latest release highlights with a direct button to read full version history in CHANGELOG.md on GitHub."
+        )
     )
 )
 
@@ -603,6 +619,7 @@ private object VaultStorage {
     private const val KEY_DEV_SETTINGS = "dev_settings_unlocked"
     private const val KEY_INCLUDE_PRERELEASES = "include_prereleases"
     private const val KEY_AUTO_CHECK_UPDATES = "auto_check_updates"
+    private const val KEY_TRACKING_START_MS = "tracking_start_ms"
 
     fun loadMonthlyBudget(context: Context): Double {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -745,6 +762,20 @@ private object VaultStorage {
             .apply()
     }
 
+    fun loadTrackingStartMillis(context: Context): Long {
+        val raw = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getLong(KEY_TRACKING_START_MS, 0L)
+        return if (raw > 0L) raw else 0L
+    }
+
+    fun saveTrackingStartMillis(context: Context, timestamp: Long) {
+        val safe = if (timestamp > 0L) timestamp else 0L
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putLong(KEY_TRACKING_START_MS, safe)
+            .apply()
+    }
+
     fun loadQuarantine(context: Context): List<QuarantineItem> {
         val raw = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .getString(KEY_QUARANTINE, "[]") ?: "[]"
@@ -853,6 +884,7 @@ private object VaultStorage {
         hourlyRate: Double,
         impulseResistedTotal: Double,
         impulseResistedCount: Int,
+        trackingStartMillis: Long,
         currency: CurrencyOption,
         transactions: List<TransactionItem>,
         goals: List<SavingsGoal>,
@@ -868,6 +900,7 @@ private object VaultStorage {
         root.put("hourlyRate", hourlyRate)
         root.put("impulseResistedTotal", impulseResistedTotal)
         root.put("impulseResistedCount", impulseResistedCount)
+        root.put("trackingStartMillis", trackingStartMillis)
         root.put("currency", currency.code)
         root.put("transactions", serializeTransactionsJson(transactions))
         root.put("goals", serializeGoalsJson(goals))
@@ -913,6 +946,7 @@ private object VaultStorage {
                 0.0
             }
             val resistedCount = root.optInt("impulseResistedCount", 0).coerceAtLeast(0)
+            val trackingStartMillis = root.optLong("trackingStartMillis", 0L).coerceAtLeast(0L)
             val currencyCode = root.optString("currency", CurrencyOption.PHP.code)
             val currency = CurrencyOption.entries.firstOrNull { it.code == currencyCode }
                 ?: CurrencyOption.PHP
@@ -925,6 +959,7 @@ private object VaultStorage {
                 hourlyRate = hourlyRate,
                 impulseResistedTotal = resistedTotal,
                 impulseResistedCount = resistedCount,
+                trackingStartMillis = trackingStartMillis,
                 currency = currency,
                 transactions = parseTransactionsJson(txArray.toString()),
                 goals = parseGoalsJson(goalArray.toString()),
@@ -1212,6 +1247,7 @@ private data class BackupPayload(
     val hourlyRate: Double,
     val impulseResistedTotal: Double,
     val impulseResistedCount: Int,
+    val trackingStartMillis: Long,
     val currency: CurrencyOption,
     val transactions: List<TransactionItem>,
     val goals: List<SavingsGoal>,
@@ -1392,16 +1428,42 @@ private fun isTimestampInCurrentMonth(timestamp: Long): Boolean {
     return isTimestampInMonthOffset(timestamp, 0)
 }
 
-private fun computeNoSpendStreakDays(transactions: List<TransactionItem>): Int {
+private fun resolveEffectiveTrackingStartMillis(
+    storedStartMillis: Long,
+    transactions: List<TransactionItem>,
+    goals: List<SavingsGoal>,
+    monthlyBudget: Double,
+    openingBalance: Double
+): Long? {
+    val earliestTx = transactions.minOfOrNull { it.timestamp }
+    val candidates = buildList {
+        if (storedStartMillis > 0L) add(storedStartMillis)
+        if (earliestTx != null && earliestTx > 0L) add(earliestTx)
+    }
+    if (candidates.isNotEmpty()) {
+        return startOfDayMillis(candidates.min())
+    }
+    if (goals.isNotEmpty() || monthlyBudget > 0.0 || openingBalance != 0.0) {
+        return startOfDayMillis(System.currentTimeMillis())
+    }
+    return null
+}
+
+private fun computeNoSpendStreakDays(
+    transactions: List<TransactionItem>,
+    trackingStartDayMillis: Long?
+): Int {
+    if (trackingStartDayMillis == null) return 0
     val expenses = transactions.filter {
         it.type == TransactionType.EXPENSE && it.category != Category.GOAL_TRANSFER
     }
-    if (expenses.isEmpty()) return 0
     val keyFmt = SimpleDateFormat("yyyy-MM-dd", Locale.US)
     val expenseDays = expenses.map { keyFmt.format(Date(it.timestamp)) }.toSet()
     val cal = Calendar.getInstance()
     var streak = 0
     for (offset in 0..365) {
+        val dayStart = startOfDayMillis(cal.timeInMillis)
+        if (dayStart < trackingStartDayMillis) break
         val key = keyFmt.format(cal.time)
         if (key in expenseDays) break
         streak++
@@ -1465,6 +1527,7 @@ private fun FinVaultApp() {
     var devSettingsUnlocked by remember { mutableStateOf(VaultStorage.loadDevSettingsUnlocked(context)) }
     var includePreReleases by remember { mutableStateOf(VaultStorage.loadIncludePreReleases(context)) }
     var autoCheckUpdates by remember { mutableStateOf(VaultStorage.loadAutoCheckUpdates(context)) }
+    var trackingStartMillis by remember { mutableLongStateOf(VaultStorage.loadTrackingStartMillis(context)) }
 
     var transactions by remember { mutableStateOf(VaultStorage.loadTransactions(context)) }
     var goals by remember { mutableStateOf(VaultStorage.loadGoals(context)) }
@@ -1481,6 +1544,11 @@ private fun FinVaultApp() {
     var undoBannerItem by remember { mutableStateOf<TransactionItem?>(null) }
     var showUndoBanner by remember { mutableStateOf(false) }
     var undoToken by remember { mutableIntStateOf(0) }
+
+    var goalCelebration by remember { mutableStateOf<GoalCelebrationEvent?>(null) }
+    var capWarningEvent by remember { mutableStateOf<CapWarningEvent?>(null) }
+    var showCapWarningBanner by remember { mutableStateOf(false) }
+    var capWarningToken by remember { mutableIntStateOf(0) }
 
     var showAddTransactionDialog by remember { mutableStateOf(false) }
     var editingTransaction by remember { mutableStateOf<TransactionItem?>(null) }
@@ -1514,6 +1582,73 @@ private fun FinVaultApp() {
         return openingBalance + inc - exp
     }
 
+    fun ensureTrackingStarted(candidateTimestamp: Long = System.currentTimeMillis()) {
+        val safeDay = startOfDayMillis(candidateTimestamp)
+        if (trackingStartMillis <= 0L || safeDay < startOfDayMillis(trackingStartMillis)) {
+            trackingStartMillis = safeDay
+            VaultStorage.saveTrackingStartMillis(context, safeDay)
+        }
+    }
+
+    fun currentMonthRealExpense(list: List<TransactionItem>): Double {
+        return list
+            .filter {
+                it.type == TransactionType.EXPENSE &&
+                    it.category != Category.GOAL_TRANSFER &&
+                    isTimestampInCurrentMonth(it.timestamp)
+            }
+            .sumOf { it.amount }
+    }
+
+    fun checkAndTriggerCapWarning(
+        previousList: List<TransactionItem>,
+        nextList: List<TransactionItem>,
+        activeBudget: Double = monthlyBudget
+    ) {
+        if (activeBudget <= 0.0) return
+        val prevSpend = currentMonthRealExpense(previousList)
+        val nextSpend = currentMonthRealExpense(nextList)
+        if (nextSpend <= prevSpend) return
+        val prevRatio = prevSpend / activeBudget
+        val nextRatio = nextSpend / activeBudget
+        val crossedExceeded = prevRatio < 1.0 && nextRatio >= 1.0
+        val crossedApproaching = prevRatio < 0.80 && nextRatio >= 0.80 && nextRatio < 1.0
+        val deeperOverCap = prevRatio >= 1.0 && nextRatio > prevRatio
+        if (crossedExceeded || crossedApproaching || deeperOverCap) {
+            capWarningEvent = CapWarningEvent(
+                id = System.currentTimeMillis(),
+                isExceeded = nextRatio >= 1.0,
+                ratio = nextRatio,
+                monthExpense = nextSpend,
+                monthlyBudget = activeBudget
+            )
+            showCapWarningBanner = true
+            capWarningToken += 1
+            logDiag(
+                "BUDGET",
+                if (nextRatio >= 1.0) "Monthly spending cap exceeded" else "Approaching monthly spending cap"
+            )
+        }
+    }
+
+    fun checkAndCelebrateGoalCompletion(previousGoal: SavingsGoal?, updatedGoal: SavingsGoal) {
+        val wasCompleted = previousGoal != null &&
+            previousGoal.targetAmount > 0.0 &&
+            previousGoal.savedAmount >= previousGoal.targetAmount
+        val isNowCompleted = updatedGoal.targetAmount > 0.0 &&
+            updatedGoal.savedAmount >= updatedGoal.targetAmount
+        if (!wasCompleted && isNowCompleted) {
+            goalCelebration = GoalCelebrationEvent(
+                id = System.currentTimeMillis(),
+                goalTitle = updatedGoal.title,
+                targetAmount = updatedGoal.targetAmount,
+                savedAmount = updatedGoal.savedAmount,
+                accentColorHex = updatedGoal.colorHex
+            )
+            logDiag("GOAL", "Savings goal milestone reached")
+        }
+    }
+
     fun setDesiredLiquidBalance(desiredBalance: Double) {
         val inc = transactions.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }
         val exp = transactions.filter { it.type == TransactionType.EXPENSE }.sumOf { it.amount }
@@ -1521,6 +1656,9 @@ private fun FinVaultApp() {
         val newOpening = (desiredBalance - ledgerDelta).coerceIn(-MAX_FINANCE_AMOUNT, MAX_FINANCE_AMOUNT)
         openingBalance = newOpening
         VaultStorage.saveOpeningBalance(context, newOpening)
+        if (desiredBalance != 0.0) {
+            ensureTrackingStarted()
+        }
         logDiag("VAULT", "Synced liquid vault balance")
     }
 
@@ -1561,10 +1699,28 @@ private fun FinVaultApp() {
     }
 
     LaunchedEffect(Unit) {
+        val resolvedStart = resolveEffectiveTrackingStartMillis(
+            storedStartMillis = trackingStartMillis,
+            transactions = transactions,
+            goals = goals,
+            monthlyBudget = monthlyBudget,
+            openingBalance = openingBalance
+        )
+        if (resolvedStart != null && (trackingStartMillis <= 0L || resolvedStart < startOfDayMillis(trackingStartMillis))) {
+            trackingStartMillis = resolvedStart
+            VaultStorage.saveTrackingStartMillis(context, resolvedStart)
+        }
         logDiag(
             "STORAGE",
             "Loaded ${transactions.size} entries, ${goals.size} goals, ${presets.size} presets, ${quarantineItems.size} quarantined"
         )
+    }
+
+    LaunchedEffect(capWarningToken) {
+        if (showCapWarningBanner && capWarningToken > 0) {
+            delay(6500L)
+            showCapWarningBanner = false
+        }
     }
 
     LaunchedEffect(setupCompleted, autoCheckUpdates, devSettingsUnlocked, includePreReleases) {
@@ -1584,11 +1740,18 @@ private fun FinVaultApp() {
         val sorted = updated.sortedByDescending { it.timestamp }
         transactions = sorted
         VaultStorage.saveTransactions(context, sorted)
+        val earliest = sorted.minOfOrNull { it.timestamp }
+        if (earliest != null) {
+            ensureTrackingStarted(earliest)
+        }
     }
 
     fun updateGoals(updated: List<SavingsGoal>) {
         goals = updated
         VaultStorage.saveGoals(context, updated)
+        if (updated.isNotEmpty()) {
+            ensureTrackingStarted()
+        }
     }
 
     fun updatePresets(updated: List<QuickPreset>) {
@@ -1755,6 +1918,9 @@ private fun FinVaultApp() {
                     if (desiredBalance != null) {
                         setDesiredLiquidBalance(desiredBalance)
                     }
+                    if (chosenCap > 0.0) {
+                        ensureTrackingStarted()
+                    }
 
                     setupCompleted = true
                     VaultStorage.saveSetupCompleted(context, true)
@@ -1870,7 +2036,10 @@ private fun FinVaultApp() {
                                     timestamp = System.currentTimeMillis(),
                                     note = "Logged via Quick Preset"
                                 )
-                                updateTransactions(listOf(entry) + transactions)
+                                val prevList = transactions
+                                val nextList = listOf(entry) + transactions
+                                updateTransactions(nextList)
+                                checkAndTriggerCapWarning(prevList, nextList)
                                 logDiag("ACTION", "Logged entry via Quick Preset")
                                 Toast.makeText(
                                     context,
@@ -1903,15 +2072,15 @@ private fun FinVaultApp() {
                                 val targetGoal = item.targetGoalId?.let { gid -> goals.firstOrNull { it.id == gid } }
                                     ?: goals.firstOrNull()
                                 if (targetGoal != null) {
+                                    val updatedGoal = targetGoal.copy(
+                                        savedAmount = (targetGoal.savedAmount + item.amount).coerceAtMost(MAX_FINANCE_AMOUNT)
+                                    )
                                     updateGoals(
                                         goals.map { g ->
-                                            if (g.id == targetGoal.id) {
-                                                g.copy(savedAmount = (g.savedAmount + item.amount).coerceAtMost(MAX_FINANCE_AMOUNT))
-                                            } else {
-                                                g
-                                            }
+                                            if (g.id == targetGoal.id) updatedGoal else g
                                         }
                                     )
+                                    checkAndCelebrateGoalCompletion(targetGoal, updatedGoal)
                                     val transferEntry = TransactionItem(
                                         id = nextUniqueId(transactions.map { it.id }),
                                         title = "Saved to ${targetGoal.title}",
@@ -1948,7 +2117,10 @@ private fun FinVaultApp() {
                                     timestamp = System.currentTimeMillis(),
                                     note = "Approved after Cooling-Off Period"
                                 )
-                                updateTransactions(listOf(entry) + transactions)
+                                val prevList = transactions
+                                val nextList = listOf(entry) + transactions
+                                updateTransactions(nextList)
+                                checkAndTriggerCapWarning(prevList, nextList)
                                 logDiag("ACTION", "Approved quarantined purchase")
                                 Toast.makeText(context, "Purchase Recorded", Toast.LENGTH_SHORT).show()
                             },
@@ -1965,6 +2137,8 @@ private fun FinVaultApp() {
                             primary = animatedPrimary,
                             secondary = animatedSecondary,
                             monthlyBudget = monthlyBudget,
+                            openingBalance = openingBalance,
+                            trackingStartMillis = trackingStartMillis,
                             hourlyRate = hourlyRate,
                             impulseResistedTotal = impulseResistedTotal,
                             impulseResistedCount = impulseResistedCount,
@@ -2107,6 +2281,7 @@ private fun FinVaultApp() {
                                     hourlyRate = hourlyRate,
                                     impulseResistedTotal = impulseResistedTotal,
                                     impulseResistedCount = impulseResistedCount,
+                                    trackingStartMillis = trackingStartMillis,
                                     currency = currency,
                                     transactions = transactions,
                                     goals = goals,
@@ -2161,6 +2336,35 @@ private fun FinVaultApp() {
                                 triggerHaptic()
                                 showResetConfirmDialog = true
                             }
+                        )
+                    }
+                }
+
+                // Monthly Cap Warning Animated Floating Banner
+                AnimatedVisibility(
+                    visible = showCapWarningBanner && capWarningEvent != null,
+                    enter = if (animationsEnabled) {
+                        fadeIn(tween(220)) + slideInVertically { -it }
+                    } else {
+                        fadeIn(snap())
+                    },
+                    exit = if (animationsEnabled) {
+                        fadeOut(tween(180)) + slideOutVertically { -it }
+                    } else {
+                        fadeOut(snap())
+                    },
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(horizontal = 16.dp, vertical = 10.dp)
+                ) {
+                    val event = capWarningEvent
+                    if (event != null) {
+                        CapWarningFloatingBanner(
+                            event = event,
+                            currency = currency,
+                            hideBalance = hideBalance,
+                            animationsEnabled = animationsEnabled,
+                            onDismiss = { showCapWarningBanner = false }
                         )
                     }
                 }
@@ -2261,7 +2465,10 @@ private fun FinVaultApp() {
                             id = nextUniqueId(transactions.map { it.id }),
                             timestamp = System.currentTimeMillis()
                         )
-                        updateTransactions(listOf(copy) + transactions)
+                        val prevList = transactions
+                        val nextList = listOf(copy) + transactions
+                        updateTransactions(nextList)
+                        checkAndTriggerCapWarning(prevList, nextList)
                         logDiag("ACTION", "Duplicated transaction entry")
                         showAddTransactionDialog = false
                         editingTransaction = null
@@ -2272,6 +2479,7 @@ private fun FinVaultApp() {
                     triggerHaptic(strong = true)
                     val existing = editingTransaction
                     if (existing != null) {
+                        val prevList = transactions
                         val updated = transactions.map { item ->
                             if (item.id == existing.id) {
                                 item.copy(
@@ -2287,6 +2495,7 @@ private fun FinVaultApp() {
                             }
                         }
                         updateTransactions(updated)
+                        checkAndTriggerCapWarning(prevList, updated)
                         logDiag("ACTION", "Updated transaction entry")
                     } else {
                         val targetGoal = if (type == TransactionType.EXPENSE && depositGoalId != null) {
@@ -2309,17 +2518,19 @@ private fun FinVaultApp() {
                             timestamp = timestamp,
                             note = finalNote
                         )
-                        updateTransactions(listOf(entry) + transactions)
+                        val prevList = transactions
+                        val nextList = listOf(entry) + transactions
+                        updateTransactions(nextList)
                         if (targetGoal != null) {
+                            val updatedGoal = targetGoal.copy(
+                                savedAmount = (targetGoal.savedAmount + amount).coerceAtMost(MAX_FINANCE_AMOUNT)
+                            )
                             updateGoals(
                                 goals.map { g ->
-                                    if (g.id == targetGoal.id) {
-                                        g.copy(savedAmount = (g.savedAmount + amount).coerceAtMost(MAX_FINANCE_AMOUNT))
-                                    } else {
-                                        g
-                                    }
+                                    if (g.id == targetGoal.id) updatedGoal else g
                                 }
                             )
+                            checkAndCelebrateGoalCompletion(targetGoal, updatedGoal)
                             logDiag("ACTION", "Transferred expense amount to savings goal")
                             Toast.makeText(
                                 context,
@@ -2327,6 +2538,7 @@ private fun FinVaultApp() {
                                 Toast.LENGTH_SHORT
                             ).show()
                         } else {
+                            checkAndTriggerCapWarning(prevList, nextList)
                             logDiag("ACTION", "Created ${type.name} transaction")
                         }
                     }
@@ -2357,7 +2569,10 @@ private fun FinVaultApp() {
                         timestamp = System.currentTimeMillis(),
                         note = "Approved via Purchase Simulator"
                     )
-                    updateTransactions(listOf(entry) + transactions)
+                    val prevList = transactions
+                    val nextList = listOf(entry) + transactions
+                    updateTransactions(nextList)
+                    checkAndTriggerCapWarning(prevList, nextList)
                     logDiag("ACTION", "Recorded purchase via simulator")
                     showSimulatorDialog = false
                     Toast.makeText(context, "Purchase Recorded", Toast.LENGTH_SHORT).show()
@@ -2367,16 +2582,14 @@ private fun FinVaultApp() {
                     recordImpulseResisted(amount)
                     val targetGoal = goals.firstOrNull { it.id == goalId }
                     if (targetGoal != null) {
+                        val updatedGoal = targetGoal.copy(
+                            savedAmount = (targetGoal.savedAmount + amount).coerceAtMost(MAX_FINANCE_AMOUNT)
+                        )
                         val updated = goals.map { goal ->
-                            if (goal.id == goalId) {
-                                goal.copy(
-                                    savedAmount = (goal.savedAmount + amount).coerceAtMost(MAX_FINANCE_AMOUNT)
-                                )
-                            } else {
-                                goal
-                            }
+                            if (goal.id == goalId) updatedGoal else goal
                         }
                         updateGoals(updated)
+                        checkAndCelebrateGoalCompletion(targetGoal, updatedGoal)
                         val transferEntry = TransactionItem(
                             id = nextUniqueId(transactions.map { it.id }),
                             title = "Saved to ${targetGoal.title}",
@@ -2454,19 +2667,17 @@ private fun FinVaultApp() {
                     triggerHaptic(strong = true)
                     val existing = editingGoal
                     if (existing != null) {
+                        val updatedGoal = existing.copy(
+                            title = title,
+                            targetAmount = target,
+                            savedAmount = savedAmount,
+                            colorHex = colorHex
+                        )
                         val updated = goals.map { goal ->
-                            if (goal.id == existing.id) {
-                                goal.copy(
-                                    title = title,
-                                    targetAmount = target,
-                                    savedAmount = savedAmount,
-                                    colorHex = colorHex
-                                )
-                            } else {
-                                goal
-                            }
+                            if (goal.id == existing.id) updatedGoal else goal
                         }
                         updateGoals(updated)
+                        checkAndCelebrateGoalCompletion(existing, updatedGoal)
                         logDiag("ACTION", "Updated savings goal")
                     } else {
                         val goal = SavingsGoal(
@@ -2477,6 +2688,7 @@ private fun FinVaultApp() {
                             colorHex = colorHex
                         )
                         updateGoals(goals + goal)
+                        checkAndCelebrateGoalCompletion(null, goal)
                         logDiag("ACTION", "Created savings goal")
                     }
                     showGoalEditorDialog = false
@@ -2495,16 +2707,14 @@ private fun FinVaultApp() {
                 onDismiss = { activeDepositGoal = null },
                 onConfirm = { depositAmount, transferFromLiquid ->
                     triggerHaptic(strong = true)
+                    val updatedGoal = goal.copy(
+                        savedAmount = (goal.savedAmount + depositAmount).coerceAtMost(MAX_FINANCE_AMOUNT)
+                    )
                     val updated = goals.map { item ->
-                        if (item.id == goal.id) {
-                            item.copy(
-                                savedAmount = (item.savedAmount + depositAmount).coerceAtMost(MAX_FINANCE_AMOUNT)
-                            )
-                        } else {
-                            item
-                        }
+                        if (item.id == goal.id) updatedGoal else item
                     }
                     updateGoals(updated)
+                    checkAndCelebrateGoalCompletion(goal, updatedGoal)
                     if (transferFromLiquid) {
                         val transferEntry = TransactionItem(
                             id = nextUniqueId(transactions.map { it.id }),
@@ -2609,6 +2819,9 @@ private fun FinVaultApp() {
                     triggerHaptic(strong = true)
                     monthlyBudget = newBudget
                     VaultStorage.saveMonthlyBudget(context, newBudget)
+                    if (newBudget > 0.0) {
+                        ensureTrackingStarted()
+                    }
                     logDiag("PREF", "Monthly cap updated")
                     showEditBudgetDialog = false
                 }
@@ -2686,6 +2899,15 @@ private fun FinVaultApp() {
                     VaultStorage.saveImpulseResistedTotal(context, impulseResistedTotal)
                     VaultStorage.saveImpulseResistedCount(context, impulseResistedCount)
                     VaultStorage.saveCurrency(context, currency)
+                    val restoredStart = resolveEffectiveTrackingStartMillis(
+                        storedStartMillis = payload.trackingStartMillis,
+                        transactions = payload.transactions,
+                        goals = payload.goals,
+                        monthlyBudget = payload.monthlyBudget,
+                        openingBalance = payload.openingBalance
+                    ) ?: 0L
+                    trackingStartMillis = restoredStart
+                    VaultStorage.saveTrackingStartMillis(context, restoredStart)
                     updateTransactions(payload.transactions)
                     updateGoals(payload.goals)
                     updatePresets(payload.presets)
@@ -2801,12 +3023,17 @@ private fun FinVaultApp() {
                     VaultStorage.saveHourlyRate(context, 0.0)
                     VaultStorage.saveImpulseResistedTotal(context, 0.0)
                     VaultStorage.saveImpulseResistedCount(context, 0)
+                    trackingStartMillis = 0L
+                    VaultStorage.saveTrackingStartMillis(context, 0L)
                     updateTransactions(emptyList())
                     updateGoals(emptyList())
                     updatePresets(emptyList())
                     updateQuarantine(emptyList())
                     showUndoBanner = false
                     undoBannerItem = null
+                    showCapWarningBanner = false
+                    capWarningEvent = null
+                    goalCelebration = null
                     logDiag("STORAGE", "Cleared all local financial records")
                     showResetConfirmDialog = false
                     Toast.makeText(context, "All Data Cleared", Toast.LENGTH_SHORT).show()
@@ -2819,6 +3046,10 @@ private fun FinVaultApp() {
                 primary = animatedPrimary,
                 secondary = animatedSecondary,
                 onTapVersionSecret = { handleSecretVersionTap() },
+                onOpenChangelog = {
+                    triggerHaptic()
+                    openExternalUrl(context, GITHUB_CHANGELOG_URL)
+                },
                 onOpenGitHub = {
                     triggerHaptic()
                     openExternalUrl(context, GITHUB_REPO_URL)
@@ -2832,6 +3063,18 @@ private fun FinVaultApp() {
                     )
                 },
                 onDismiss = { showCreditsDialog = false }
+            )
+        }
+
+        goalCelebration?.let { celebration ->
+            GoalMilestoneCelebrationOverlay(
+                event = celebration,
+                currency = currency,
+                primary = animatedPrimary,
+                secondary = animatedSecondary,
+                hideBalance = hideBalance,
+                animationsEnabled = animationsEnabled,
+                onDismiss = { goalCelebration = null }
             )
         }
         }
@@ -3571,6 +3814,7 @@ private fun VaultOverviewScreen(
                 primary = primary,
                 secondary = secondary,
                 hideBalance = hideBalance,
+                animationsEnabled = animationsEnabled,
                 onSetBalance = onSetBalance,
                 onEditBudget = onEditBudget
             )
@@ -4189,22 +4433,61 @@ private fun MatteLedgerCard(
     primary: Color,
     secondary: Color,
     hideBalance: Boolean,
+    animationsEnabled: Boolean,
     onSetBalance: () -> Unit,
     onEditBudget: () -> Unit
 ) {
     val hasBudget = monthlyBudget > 0.0
+    val isWarningActive = hasBudget && summary.budgetRatio >= 0.80f
+    val isOverCap = hasBudget && summary.budgetRatio >= 1.0f
     val percentUsedLabel = if (hasBudget) formatCompactPercent(summary.budgetRatio.toDouble()) else "0%"
     val statusColor = when {
         !hasBudget -> primary
-        summary.budgetRatio >= 1.0f -> Color(0xFFF43F5E)
-        summary.budgetRatio >= 0.78f -> Color(0xFFF59E0B)
+        isOverCap -> Color(0xFFF43F5E)
+        isWarningActive -> Color(0xFFF59E0B)
         else -> Color(0xFF10B981)
     }
     val statusText = when {
         !hasBudget -> "Set Cap"
-        summary.budgetRatio >= 1.0f -> "Over Cap"
-        summary.budgetRatio >= 0.78f -> "Near Limit"
+        isOverCap -> "Over Cap"
+        isWarningActive -> "Near Limit"
         else -> "Healthy"
+    }
+
+    val warningPulse = if (isWarningActive && animationsEnabled) {
+        val transition = rememberInfiniteTransition(label = "capWarningPulse")
+        val anim by transition.animateFloat(
+            initialValue = 0.35f,
+            targetValue = 0.92f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = if (isOverCap) 850 else 1250, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "capWarningAlpha"
+        )
+        anim
+    } else if (isWarningActive) {
+        0.72f
+    } else {
+        0f
+    }
+
+    val cardBorderBrush = if (isWarningActive) {
+        Brush.linearGradient(
+            colors = listOf(
+                statusColor.copy(alpha = warningPulse),
+                Color.White.copy(alpha = 0.12f),
+                statusColor.copy(alpha = warningPulse * 0.72f)
+            )
+        )
+    } else {
+        Brush.linearGradient(
+            colors = listOf(
+                primary.copy(alpha = 0.42f),
+                Color.White.copy(alpha = 0.08f),
+                secondary.copy(alpha = 0.28f)
+            )
+        )
     }
 
     Box(
@@ -4217,14 +4500,8 @@ private fun MatteLedgerCard(
                 )
             )
             .border(
-                width = 0.85.dp,
-                brush = Brush.linearGradient(
-                    colors = listOf(
-                        primary.copy(alpha = 0.42f),
-                        Color.White.copy(alpha = 0.08f),
-                        secondary.copy(alpha = 0.28f)
-                    )
-                ),
+                width = if (isWarningActive) 1.25.dp else 0.85.dp,
+                brush = cardBorderBrush,
                 shape = RoundedCornerShape(24.dp)
             )
     ) {
@@ -4298,6 +4575,11 @@ private fun MatteLedgerCard(
                     Box(
                         modifier = Modifier
                             .size(6.dp)
+                            .graphicsLayer {
+                                val s = if (isWarningActive && animationsEnabled) 0.85f + (warningPulse * 0.38f) else 1f
+                                scaleX = s
+                                scaleY = s
+                            }
                             .clip(CircleShape)
                             .background(statusColor)
                     )
@@ -4451,6 +4733,16 @@ private fun MatteLedgerCard(
                     .background(Color.White.copy(alpha = 0.09f))
             ) {
                 if (hasBudget) {
+                    val barStartColor = when {
+                        isOverCap -> Color(0xFFF59E0B)
+                        isWarningActive -> primary
+                        else -> primary
+                    }
+                    val barEndColor = when {
+                        isOverCap -> Color(0xFFF43F5E)
+                        isWarningActive -> Color(0xFFF59E0B)
+                        else -> secondary
+                    }
                     Box(
                         modifier = Modifier
                             .fillMaxWidth(burnRatio)
@@ -4459,8 +4751,8 @@ private fun MatteLedgerCard(
                             .background(
                                 Brush.horizontalGradient(
                                     listOf(
-                                        primary,
-                                        if (summary.budgetRatio >= 0.85f) Color(0xFFF43F5E) else secondary
+                                        barStartColor,
+                                        if (isWarningActive) barEndColor.copy(alpha = 0.72f + (warningPulse * 0.28f)) else barEndColor
                                     )
                                 )
                             )
@@ -4758,6 +5050,7 @@ private data class AnalyticsSnapshot(
     val sevenDayPoints: List<Pair<String, Double>>,
     val monthDaySpends: List<Double>,
     val currentDayOfMonth: Int,
+    val heatmapStartDayOfMonth: Int,
     val healthScore: Int?,
     val healthGrade: String,
     val healthGuidance: String
@@ -4771,6 +5064,8 @@ private fun InsightsScreen(
     primary: Color,
     secondary: Color,
     monthlyBudget: Double,
+    openingBalance: Double,
+    trackingStartMillis: Long,
     hourlyRate: Double,
     impulseResistedTotal: Double,
     impulseResistedCount: Int,
@@ -4778,7 +5073,7 @@ private fun InsightsScreen(
     animationsEnabled: Boolean,
     onHaptic: () -> Unit
 ) {
-    val analytics = remember(transactions, goals, monthlyBudget) {
+    val analytics = remember(transactions, goals, monthlyBudget, openingBalance, trackingStartMillis) {
         val expenses = transactions.filter {
             it.type == TransactionType.EXPENSE && it.category != Category.GOAL_TRANSFER
         }
@@ -4786,8 +5081,15 @@ private fun InsightsScreen(
         val totalExpense = expenses.sumOf { it.amount }
         val monthExpense = expenses.filter { isTimestampInCurrentMonth(it.timestamp) }.sumOf { it.amount }
 
+        val effectiveTrackingStart = resolveEffectiveTrackingStartMillis(
+            storedStartMillis = trackingStartMillis,
+            transactions = transactions,
+            goals = goals,
+            monthlyBudget = monthlyBudget,
+            openingBalance = openingBalance
+        )
         val largest = expenses.maxByOrNull { it.amount }
-        val streak = computeNoSpendStreakDays(transactions)
+        val streak = computeNoSpendStreakDays(transactions, effectiveTrackingStart)
 
         val categoryTotals = expenses
             .groupBy { it.category }
@@ -4832,6 +5134,27 @@ private fun InsightsScreen(
             }
         }
         val monthDaySpends = dayBuckets.toList()
+        val firstOfCurrentMonth = Calendar.getInstance().apply {
+            set(Calendar.YEAR, currentYear)
+            set(Calendar.MONTH, currentMonth)
+            set(Calendar.DAY_OF_MONTH, 1)
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        val heatmapStartDayOfMonth = if (effectiveTrackingStart == null) {
+            daysInMonth + 1
+        } else if (effectiveTrackingStart <= firstOfCurrentMonth) {
+            1
+        } else {
+            val startCal = Calendar.getInstance().apply { timeInMillis = effectiveTrackingStart }
+            if (startCal.get(Calendar.YEAR) == currentYear && startCal.get(Calendar.MONTH) == currentMonth) {
+                startCal.get(Calendar.DAY_OF_MONTH).coerceIn(1, daysInMonth)
+            } else {
+                daysInMonth + 1
+            }
+        }
 
         val score: Int?
         val grade: String
@@ -4889,6 +5212,7 @@ private fun InsightsScreen(
             sevenDayPoints = sevenDays,
             monthDaySpends = monthDaySpends,
             currentDayOfMonth = todayDayOfMonth,
+            heatmapStartDayOfMonth = heatmapStartDayOfMonth,
             healthScore = score,
             healthGrade = grade,
             healthGuidance = guidance
@@ -5182,9 +5506,20 @@ private fun InsightsScreen(
             } else {
                 max(1.0, analytics.dailyAverage)
             }
-            val zeroSpendDaysCount = analytics.monthDaySpends
-                .take(analytics.currentDayOfMonth)
-                .count { it <= 0.0 }
+            val hasTrackedDays = analytics.heatmapStartDayOfMonth <= analytics.currentDayOfMonth
+            val zeroSpendDaysCount = if (hasTrackedDays) {
+                (analytics.heatmapStartDayOfMonth..analytics.currentDayOfMonth).count { dayNum ->
+                    analytics.monthDaySpends[dayNum - 1] <= 0.0
+                }
+            } else {
+                0
+            }
+            val heatmapSubtitle = when {
+                !hasTrackedDays -> "${formatMonthYearLabel(0)} • Record a Value to Start"
+                analytics.heatmapStartDayOfMonth > 1 ->
+                    "${formatMonthYearLabel(0)} • From Day ${analytics.heatmapStartDayOfMonth} • $zeroSpendDaysCount Zero-Spend"
+                else -> "${formatMonthYearLabel(0)} • $zeroSpendDaysCount Zero-Spend Days"
+            }
 
             SurfaceCard {
                 Column(modifier = Modifier.padding(18.dp)) {
@@ -5202,14 +5537,17 @@ private fun InsightsScreen(
                                 overflow = TextOverflow.Ellipsis
                             )
                             Text(
-                                text = "${formatMonthYearLabel(0)} • $zeroSpendDaysCount Zero-Spend Days",
+                                text = heatmapSubtitle,
                                 style = MaterialTheme.typography.bodyMedium.copy(fontSize = 11.5.sp),
                                 color = Color(0xFF8B93A7),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
                         }
-                        if (selectedHeatmapDay in 1..analytics.monthDaySpends.size) {
+                        if (selectedHeatmapDay in analytics.heatmapStartDayOfMonth..analytics.currentDayOfMonth &&
+                            selectedHeatmapDay in 1..analytics.monthDaySpends.size
+                        ) {
+                            Spacer(modifier = Modifier.width(8.dp))
                             val spendVal = analytics.monthDaySpends[selectedHeatmapDay - 1]
                             Text(
                                 text = "Day $selectedHeatmapDay: ${formatMoney(spendVal, currency.symbol, false, hideBalance)}",
@@ -5234,8 +5572,11 @@ private fun InsightsScreen(
                                     if (col < weekDays.size) {
                                         val amount = weekDays[col]
                                         val isFuture = dayNumber > analytics.currentDayOfMonth
-                                        val isSelected = selectedHeatmapDay == dayNumber
+                                        val isBeforeStart = dayNumber < analytics.heatmapStartDayOfMonth
+                                        val isUntracked = isFuture || isBeforeStart
+                                        val isSelected = !isUntracked && selectedHeatmapDay == dayNumber
                                         val cellColor = when {
+                                            isBeforeStart -> Color(0xFF12151E)
                                             isFuture -> Color(0xFF151822)
                                             amount <= 0.0 -> Color(0xFF10B981).copy(alpha = 0.28f)
                                             amount <= dailyPace -> primary.copy(alpha = 0.30f)
@@ -5245,6 +5586,7 @@ private fun InsightsScreen(
                                         val borderColor = when {
                                             isSelected -> Color.White
                                             dayNumber == analytics.currentDayOfMonth -> primary
+                                            isBeforeStart -> Color.White.copy(alpha = 0.03f)
                                             else -> Color.White.copy(alpha = 0.06f)
                                         }
                                         Box(
@@ -5258,7 +5600,7 @@ private fun InsightsScreen(
                                                     color = borderColor,
                                                     shape = RoundedCornerShape(8.dp)
                                                 )
-                                                .clickable(enabled = !isFuture) {
+                                                .clickable(enabled = !isUntracked) {
                                                     onHaptic()
                                                     selectedHeatmapDay = if (isSelected) -1 else dayNumber
                                                 },
@@ -5267,7 +5609,7 @@ private fun InsightsScreen(
                                             Text(
                                                 text = dayNumber.toString(),
                                                 style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                                                color = if (isFuture) Color(0xFF4B5266) else Color.White
+                                                color = if (isUntracked) Color(0xFF474E62) else Color.White
                                             )
                                         }
                                     } else {
@@ -5284,10 +5626,11 @@ private fun InsightsScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text("Emerald: Zero", style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.5.sp), color = Color(0xFF10B981))
-                        Text("Accent: On Pace", style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.5.sp), color = primary)
-                        Text("Amber: High", style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.5.sp), color = Color(0xFFF59E0B))
-                        Text("Rose: Peak", style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.5.sp), color = Color(0xFFF43F5E))
+                        Text("Zero", style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.5.sp), color = Color(0xFF10B981))
+                        Text("On Pace", style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.5.sp), color = primary)
+                        Text("High", style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.5.sp), color = Color(0xFFF59E0B))
+                        Text("Peak", style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.5.sp), color = Color(0xFFF43F5E))
+                        Text("Untracked", style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.5.sp), color = Color(0xFF636B80))
                     }
                 }
             }
@@ -6850,7 +7193,7 @@ private fun SettingsScreen(
         // Open-Source Credits & Version Registry Card
         item(key = "credits_section") {
             Column {
-                SettingsSectionTitle("Credits & Version History")
+                SettingsSectionTitle("Credits & Release Notes")
                 Spacer(modifier = Modifier.height(8.dp))
                 Box(
                     modifier = Modifier
@@ -6919,7 +7262,7 @@ private fun SettingsScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "View Credits, Changelog & MIT License",
+                                text = "View Credits, What's New & MIT License",
                                 style = MaterialTheme.typography.bodyMedium.copy(
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Medium
@@ -8182,10 +8525,17 @@ private fun CreditsAndLicenseDialog(
     primary: Color,
     secondary: Color,
     onTapVersionSecret: () -> Unit,
+    onOpenChangelog: () -> Unit,
     onOpenGitHub: () -> Unit,
     onCopyAttribution: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val tierColor = when {
+        APP_BUILD_TRACK.contains("Major") -> secondary
+        APP_BUILD_TRACK.contains("Patch") -> Color(0xFF10B981)
+        else -> primary
+    }
+
     VaultDialogShell(onDismiss = onDismiss) {
         Row(
             modifier = Modifier
@@ -8240,58 +8590,109 @@ private fun CreditsAndLicenseDialog(
         Spacer(modifier = Modifier.height(14.dp))
 
         Text(
-            text = "VERSION HISTORY",
+            text = "LATEST RELEASE NOTES",
             style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.0.sp),
             color = Color(0xFF8B93A7)
         )
         Spacer(modifier = Modifier.height(8.dp))
 
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            ReleaseHistory.forEach { entry ->
-                val badgeColor = when {
-                    entry.tier.contains("Major") -> secondary
-                    entry.tier.contains("Patch") -> Color(0xFF10B981)
-                    else -> primary
-                }
-                Column(
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color(0xFF141721))
+                .border(0.75.dp, Color(0xFF222735), RoundedCornerShape(12.dp))
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "v$APP_VERSION_NAME (Build $APP_VERSION_CODE)",
+                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 14.sp),
+                    color = Color.White,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color(0xFF141721))
-                        .border(0.75.dp, Color(0xFF222735), RoundedCornerShape(12.dp))
-                        .padding(12.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(tierColor.copy(alpha = 0.16f))
+                        .padding(horizontal = 7.dp, vertical = 2.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = entry.version,
-                            style = MaterialTheme.typography.titleMedium.copy(fontSize = 13.5.sp),
-                            color = Color.White
-                        )
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(badgeColor.copy(alpha = 0.16f))
-                                .padding(horizontal = 7.dp, vertical = 2.dp)
-                        ) {
-                            Text(
-                                text = entry.tier,
-                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                                color = badgeColor
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = entry.summary,
-                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 11.5.sp),
-                        color = Color(0xFF9EA7BD)
+                        text = APP_BUILD_TRACK,
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                        color = tierColor,
+                        maxLines = 1
                     )
                 }
             }
+
+            LatestReleaseHighlights.forEach { section ->
+                val secColor = Color(section.accentHex)
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = section.label.uppercase(Locale.US),
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 10.sp,
+                            letterSpacing = 0.8.sp
+                        ),
+                        color = secColor
+                    )
+                    section.items.forEach { bullet ->
+                        Text(
+                            text = "• $bullet",
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontSize = 11.5.sp,
+                                lineHeight = 16.5.sp
+                            ),
+                            color = Color(0xFFB8C0D4)
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(primary.copy(alpha = 0.12f))
+                .border(0.8.dp, primary.copy(alpha = 0.42f), RoundedCornerShape(12.dp))
+                .clickable(onClick = onOpenChangelog)
+                .padding(horizontal = 14.dp, vertical = 11.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "View Full Changelog on GitHub",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    ),
+                    color = primary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = "Read all earlier versions in CHANGELOG.md",
+                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 11.sp),
+                    color = Color(0xFF9EA7BD),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            ChevronRightGlyph(color = primary, modifier = Modifier.size(13.dp))
         }
 
         Spacer(modifier = Modifier.height(14.dp))
@@ -9831,6 +10232,416 @@ private fun SurfaceCard(
             .border(0.75.dp, Color(0xFF1E222E), RoundedCornerShape(20.dp)),
         content = content
     )
+}
+
+@Composable
+private fun GoalMilestoneCelebrationOverlay(
+    event: GoalCelebrationEvent,
+    currency: CurrencyOption,
+    primary: Color,
+    secondary: Color,
+    hideBalance: Boolean,
+    animationsEnabled: Boolean,
+    onDismiss: () -> Unit
+) {
+    val goalAccent = Color(event.accentColorHex)
+    val burstProgress = remember(event.id, animationsEnabled) {
+        Animatable(if (animationsEnabled) 0f else 1f)
+    }
+    val cardScale = remember(event.id, animationsEnabled) {
+        Animatable(if (animationsEnabled) 0.84f else 1f)
+    }
+
+    LaunchedEffect(event.id, animationsEnabled) {
+        if (animationsEnabled) {
+            launch {
+                cardScale.animateTo(
+                    targetValue = 1f,
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioMediumBouncy,
+                        stiffness = Spring.StiffnessMediumLow
+                    )
+                )
+            }
+            launch {
+                burstProgress.animateTo(
+                    targetValue = 1f,
+                    animationSpec = tween(durationMillis = 1900, easing = FastOutSlowInEasing)
+                )
+            }
+        }
+    }
+
+    val haloPulse = if (animationsEnabled) {
+        val transition = rememberInfiniteTransition(label = "goalHalo")
+        val p by transition.animateFloat(
+            initialValue = 0.90f,
+            targetValue = 1.12f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 1200, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "goalHaloScale"
+        )
+        p
+    } else {
+        1f
+    }
+
+    val confettiPalette = remember(primary, secondary, goalAccent) {
+        listOf(
+            goalAccent,
+            primary,
+            secondary,
+            Color(0xFF10B981),
+            Color(0xFFF59E0B),
+            Color(0xFFEAF7FF)
+        )
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xCC05070B))
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = onDismiss
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            if (animationsEnabled) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val t = burstProgress.value
+                    val fade = (1f - ((t - 0.65f) / 0.35f).coerceIn(0f, 1f))
+                    if (fade > 0.01f) {
+                        val originX = size.width * 0.5f
+                        val originY = size.height * 0.42f
+                        val maxRadius = min(size.width, size.height) * 0.56f
+                        val particleCount = 38
+                        for (i in 0 until particleCount) {
+                            val angleDeg = (i * 360.0 / particleCount) + ((i % 3) * 7.0)
+                            val rad = angleDeg * PI / 180.0
+                            val speedFactor = 0.52f + ((i * 37) % 100) / 150f
+                            val dist = maxRadius * speedFactor * t
+                            val gravity = (size.height * 0.24f) * t * t
+                            val px = originX + (cos(rad) * dist).toFloat()
+                            val py = originY + (sin(rad) * dist).toFloat() + gravity
+                            val pColor = confettiPalette[i % confettiPalette.size].copy(alpha = fade * 0.92f)
+                            val w = (6f + (i % 4) * 2.5f).dp.toPx()
+                            val h = (3.5f + (i % 3) * 2f).dp.toPx()
+                            val spin = (i * 42f) + (t * 420f * if (i % 2 == 0) 1f else -1f)
+                            if (i % 4 == 0) {
+                                drawCircle(
+                                    color = pColor,
+                                    radius = (3.2f + (i % 3)).dp.toPx(),
+                                    center = Offset(px, py)
+                                )
+                            } else {
+                                rotate(degrees = spin, pivot = Offset(px, py)) {
+                                    drawRoundRect(
+                                        color = pColor,
+                                        topLeft = Offset(px - w / 2f, py - h / 2f),
+                                        size = Size(w, h),
+                                        cornerRadius = CornerRadius(2.dp.toPx(), 2.dp.toPx())
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .graphicsLayer {
+                        scaleX = cardScale.value
+                        scaleY = cardScale.value
+                    }
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(Color(0xFF151C2C), Color(0xFF0E121B))
+                        )
+                    )
+                    .border(
+                        width = 1.2.dp,
+                        brush = Brush.linearGradient(
+                            colors = listOf(
+                                goalAccent.copy(alpha = 0.85f),
+                                Color(0xFF10B981).copy(alpha = 0.65f),
+                                primary.copy(alpha = 0.75f)
+                            )
+                        ),
+                        shape = RoundedCornerShape(24.dp)
+                    )
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = {}
+                    )
+                    .padding(horizontal = 22.dp, vertical = 24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Box(
+                    modifier = Modifier.size(86.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        val r = max(1f, (size.minDimension * 0.46f) * haloPulse)
+                        drawCircle(
+                            brush = Brush.radialGradient(
+                                colors = listOf(
+                                    goalAccent.copy(alpha = 0.36f),
+                                    Color(0xFF10B981).copy(alpha = 0.14f),
+                                    Color.Transparent
+                                ),
+                                center = center,
+                                radius = r
+                            ),
+                            center = center,
+                            radius = r
+                        )
+                        drawCircle(
+                            color = goalAccent.copy(alpha = 0.55f),
+                            radius = size.minDimension * 0.40f,
+                            style = Stroke(width = 1.6.dp.toPx())
+                        )
+                    }
+                    FinVaultBrandMark(
+                        primary = goalAccent,
+                        secondary = Color(0xFF10B981),
+                        modifier = Modifier.size(54.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xFF10B981).copy(alpha = 0.18f))
+                        .border(0.75.dp, Color(0xFF10B981).copy(alpha = 0.50f), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = "MILESTONE ACHIEVED",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 10.sp,
+                            letterSpacing = 1.1.sp
+                        ),
+                        color = Color(0xFF10B981),
+                        maxLines = 1
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Text(
+                    text = "Congratulations!",
+                    style = MaterialTheme.typography.headlineLarge.copy(fontSize = 25.sp),
+                    color = Color.White,
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Text(
+                    text = "You reached 100% of your \"${event.goalTitle}\" savings target.",
+                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp),
+                    color = Color(0xFFC7CEDF),
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(Color.Black.copy(alpha = 0.30f))
+                        .border(0.75.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "GOAL RESERVE FUNDED",
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.5.sp),
+                        color = Color(0xFF8B93A7)
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "${formatMoney(event.savedAmount, currency.symbol, hasFractionalCents(event.savedAmount), hideBalance)} / ${formatMoney(event.targetAmount, currency.symbol, hasFractionalCents(event.targetAmount), hideBalance)}",
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold
+                        ),
+                        color = goalAccent,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(18.dp))
+
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(13.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = goalAccent,
+                        contentColor = Color(0xFF07080B)
+                    ),
+                    contentPadding = PaddingValues(vertical = 12.dp)
+                ) {
+                    Text("Continue", fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CapWarningFloatingBanner(
+    event: CapWarningEvent,
+    currency: CurrencyOption,
+    hideBalance: Boolean,
+    animationsEnabled: Boolean,
+    onDismiss: () -> Unit
+) {
+    val accent = if (event.isExceeded) Color(0xFFF43F5E) else Color(0xFFF59E0B)
+    val shakeOffset = remember(event.id, animationsEnabled) { Animatable(0f) }
+
+    LaunchedEffect(event.id, animationsEnabled) {
+        if (animationsEnabled) {
+            listOf(-8f, 8f, -6f, 6f, -3f, 3f, 0f).forEach { target ->
+                shakeOffset.animateTo(
+                    targetValue = target,
+                    animationSpec = tween(durationMillis = 52, easing = LinearEasing)
+                )
+            }
+        }
+    }
+
+    val pulseAlpha = if (animationsEnabled) {
+        val transition = rememberInfiniteTransition(label = "bannerWarningPulse")
+        val a by transition.animateFloat(
+            initialValue = 0.45f,
+            targetValue = 0.95f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 750, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "bannerPulseAlpha"
+        )
+        a
+    } else {
+        0.75f
+    }
+
+    val pctLabel = formatCompactPercent(event.ratio)
+    val diffAmount = abs(event.monthlyBudget - event.monthExpense)
+    val detailText = if (event.isExceeded) {
+        "$pctLabel used • Over cap by ${formatMoney(diffAmount, currency.symbol, false, hideBalance)}"
+    } else {
+        "$pctLabel used • ${formatMoney(diffAmount, currency.symbol, false, hideBalance)} remaining this month"
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .graphicsLayer { translationX = shakeOffset.value }
+            .clip(RoundedCornerShape(16.dp))
+            .background(if (event.isExceeded) Color(0xFF211017) else Color(0xFF211A0E))
+            .border(
+                width = 1.15.dp,
+                color = accent.copy(alpha = pulseAlpha),
+                shape = RoundedCornerShape(16.dp)
+            )
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(34.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(accent.copy(alpha = 0.18f)),
+            contentAlignment = Alignment.Center
+        ) {
+            AlertTriangleGlyph(color = accent, modifier = Modifier.size(18.dp))
+        }
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = if (event.isExceeded) "Monthly Cap Exceeded" else "Approaching Monthly Cap",
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontSize = 13.5.sp,
+                    fontWeight = FontWeight.Bold
+                ),
+                color = Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = detailText,
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 11.5.sp),
+                color = accent,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        Spacer(modifier = Modifier.width(8.dp))
+
+        Box(
+            modifier = Modifier
+                .size(26.dp)
+                .clip(CircleShape)
+                .background(Color.Black.copy(alpha = 0.28f))
+                .clickable(onClick = onDismiss),
+            contentAlignment = Alignment.Center
+        ) {
+            CloseGlyph(color = Color(0xFFD6DCEB), modifier = Modifier.size(9.dp))
+        }
+    }
+}
+
+@Composable
+private fun AlertTriangleGlyph(color: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        val tri = Path().apply {
+            moveTo(size.width * 0.50f, size.height * 0.10f)
+            lineTo(size.width * 0.92f, size.height * 0.86f)
+            lineTo(size.width * 0.08f, size.height * 0.86f)
+            close()
+        }
+        drawPath(
+            path = tri,
+            color = color,
+            style = Stroke(width = 1.9.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
+        )
+        drawLine(
+            color = color,
+            start = Offset(size.width * 0.50f, size.height * 0.38f),
+            end = Offset(size.width * 0.50f, size.height * 0.62f),
+            strokeWidth = 1.9.dp.toPx(),
+            cap = StrokeCap.Round
+        )
+        drawCircle(
+            color = color,
+            radius = 1.3.dp.toPx(),
+            center = Offset(size.width * 0.50f, size.height * 0.74f)
+        )
+    }
 }
 
 // Matching FinVault Hexagonal Shield & FV Monogram Brand Emblem

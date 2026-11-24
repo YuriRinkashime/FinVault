@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-2.3.0%20Stable-38BDF8?style=flat-square" alt="Version 2.3.0 Stable" />
+  <img src="https://img.shields.io/badge/Version-2.3.1%20Stable-38BDF8?style=flat-square" alt="Version 2.3.1 Stable" />
   <img src="https://img.shields.io/badge/Platform-Android%208.0%2B%20(API%2026%2B)-10B981?style=flat-square" alt="Android 8.0+" />
   <img src="https://img.shields.io/badge/UI-Jetpack%20Compose%20%2B%20Material%203-818CF8?style=flat-square" alt="Jetpack Compose" />
   <img src="https://img.shields.io/badge/Privacy-100%25%20Offline%20%E2%80%A2%20Zero%20Ads-14B8A6?style=flat-square" alt="100% Offline" />

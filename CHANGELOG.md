@@ -4,6 +4,17 @@ All notable changes to **FinVault Yuri** follow Semantic Versioning (`MAJOR.MINO
 
 ---
 
+## [v2.3.1] — Patch Release (Build 6) — 2026-11-24
+### Added
+- **Goal Reached Celebration Animation:** Reaching 100% on any Savings Goal (via Goal Deposit, Expense-to-Goal Transfer, Purchase Simulator Save Instead, Quarantine Resist & Save, or Goal Editor) now triggers a native Jetpack Compose confetti burst, pulsing titanium halo, and a dismissible **Milestone Achieved** card that respects the global **Smooth Animations** toggle.
+- **Monthly Cap Warning Animation:** Logging an expense that crosses **80%–99%** (**Approaching Monthly Cap**) or **100%+** (**Monthly Cap Exceeded**) now triggers an animated amber or crimson floating alert banner with shake feedback, paired with a subtle pulsing border, status dot, and progress bar highlight on the Vault ledger card.
+
+### Updated
+- **Smart Tracking Origin for Heatmap & Streak:** The **Monthly Discipline Heatmap** and **No-Spend Streak** now anchor to the first day you record any financial value (balance sync, monthly cap, transaction, or goal). Earlier days in the month render cleanly as **Untracked** and are excluded from zero-spend counts and streaks, with `trackingStartMillis` preserved across local storage and JSON backups.
+- **Streamlined In-App Release Notes & GitHub Changelog Link:** Replaced the long multi-version history inside the **About & License** dialog with a focused **Latest Release Notes** card showing only the current update's **What's New** and **Updated** highlights, paired with a clickable **View Full Changelog on GitHub** button pointing directly to `CHANGELOG.md`.
+
+---
+
 ## [v2.3.0] — Minor Release (Build 5, Stable Production) — 2026-11-23
 ### Added
 - **FinVault Yuri Rebrand:** Official rebrand to **FinVault Yuri** across the app, launcher icon label, exports, diagnostics, and documentation while preserving `com.yuri.finvault` package compatibility and existing local data.
