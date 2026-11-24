@@ -51,6 +51,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
@@ -106,13 +107,19 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -151,8 +158,8 @@ import kotlin.math.truncate
 // ============================================================================
 private const val APP_VERSION_MAJOR = 2
 private const val APP_VERSION_MINOR = 3
-private const val APP_VERSION_PATCH = 1
-private const val APP_VERSION_CODE = 6
+private const val APP_VERSION_PATCH = 2
+private const val APP_VERSION_CODE = 7
 private const val APP_VERSION_NAME = "$APP_VERSION_MAJOR.$APP_VERSION_MINOR.$APP_VERSION_PATCH"
 private const val APP_BUILD_TRACK = "Patch Release"
 private const val MAX_FINANCE_AMOUNT = 999_999_999_999.99
@@ -353,16 +360,15 @@ private val LatestReleaseHighlights = listOf(
         label = "What's New",
         accentHex = 0xFF10B981L,
         items = listOf(
-            "Goal Milestone Celebration: Animated titanium confetti burst and milestone card trigger whenever a Savings Goal reaches 100%.",
-            "Monthly Cap Warning Animation: Animated amber and crimson alerts plus pulsing ledger feedback trigger when spending nears (80%+) or exceeds (100%+) your Monthly Cap."
+            "Rich GitHub Markdown Updater: In-app Update Available release notes now render headings, bold/italic text, inline code, bullet lists, callouts, dividers, and links natively without raw Markdown symbols."
         )
     ),
     ChangelogSection(
-        label = "Updated",
+        label = "Fixed",
         accentHex = 0xFF38BDF8L,
         items = listOf(
-            "Smart Tracking Origin: Monthly Discipline Heatmap and No-Spend Streak now start on the first day you record a value, marking earlier days cleanly as Untracked.",
-            "Streamlined In-App Changelog: About dialog displays only the latest release highlights with a direct button to read full version history in CHANGELOG.md on GitHub."
+            "Full Scrollable Release Notes: Removed the 1,200-character truncation cutoff in the updater dialog and pinned the Download APK and action buttons so they are never clipped on long changelogs.",
+            "Unified Release Signing Baseline: Standardized permanent release keystore signing across mobile and PC builds for seamless future in-place upgrades."
         )
     )
 )
@@ -9895,6 +9901,541 @@ private fun EditHourlyRateDialog(
     }
 }
 
+private sealed class MarkdownBlock {
+    data class Heading(val level: Int, val text: String) : MarkdownBlock()
+    data class Paragraph(val text: String) : MarkdownBlock()
+    data class Bullet(val indent: Int, val marker: String, val text: String) : MarkdownBlock()
+    data class Numbered(val indent: Int, val number: String, val text: String) : MarkdownBlock()
+    data class Quote(val text: String) : MarkdownBlock()
+    data class Callout(val kind: String, val lines: List<String>) : MarkdownBlock()
+    data class CodeBlock(val lines: List<String>) : MarkdownBlock()
+    data object Divider : MarkdownBlock()
+}
+
+private fun parseGitHubMarkdownBlocks(rawMarkdown: String): List<MarkdownBlock> {
+    val cleaned = rawMarkdown
+        .replace("\r\n", "\n")
+        .replace('\r', '\n')
+        .replace(Regex("<!--.*?-->", setOf(RegexOption.DOT_MATCHES_ALL)), "")
+        .replace(Regex("<br\\s*/?>", RegexOption.IGNORE_CASE), "\n")
+
+    val rawLines = cleaned.split('\n')
+    val blocks = mutableListOf<MarkdownBlock>()
+    val headingRegex = Regex("^\\s{0,3}(#{1,6})\\s+(.+?)\\s*#*\\s*$")
+    val dividerRegex = Regex("^\\s{0,3}([-*_])(?:\\s*\\1){2,}\\s*$")
+    val checkboxRegex = Regex("^(\\s*)[-*+]\\s+\\[([ xX])]\\s+(.+)$")
+    val bulletRegex = Regex("^(\\s*)[-*+]\\s+(.+)$")
+    val numberedRegex = Regex("^(\\s*)(\\d+)\\.\\s+(.+)$")
+    val calloutRegex = Regex("^\\s*>\\s*\\[!([A-Za-z]+)]\\s*(.*)$")
+
+    var i = 0
+    while (i < rawLines.size) {
+        val line = rawLines[i]
+        val trimmed = line.trim()
+        if (trimmed.isEmpty()) {
+            i += 1
+            continue
+        }
+
+        // Fenced code blocks (``` or ~~~)
+        if (trimmed.startsWith("```") || trimmed.startsWith("~~~")) {
+            val fence = trimmed.take(3)
+            val codeLines = mutableListOf<String>()
+            i += 1
+            while (i < rawLines.size && !rawLines[i].trim().startsWith(fence)) {
+                codeLines.add(rawLines[i])
+                i += 1
+            }
+            if (i < rawLines.size) i += 1
+            if (codeLines.isNotEmpty()) {
+                blocks.add(MarkdownBlock.CodeBlock(codeLines))
+            }
+            continue
+        }
+
+        // Horizontal divider (---, ***, ___)
+        if (dividerRegex.matches(line)) {
+            blocks.add(MarkdownBlock.Divider)
+            i += 1
+            continue
+        }
+
+        // Headings (# .. ######)
+        val headingMatch = headingRegex.matchEntire(line)
+        if (headingMatch != null) {
+            val level = headingMatch.groupValues[1].length
+            val text = headingMatch.groupValues[2].trim()
+            if (text.isNotEmpty()) {
+                blocks.add(MarkdownBlock.Heading(level, text))
+            }
+            i += 1
+            continue
+        }
+
+        // GitHub Alert Callouts (> [!IMPORTANT], > [!NOTE], > [!WARNING], etc.)
+        val calloutMatch = calloutRegex.matchEntire(line)
+        if (calloutMatch != null) {
+            val kind = calloutMatch.groupValues[1].uppercase(Locale.US)
+            val bodyLines = mutableListOf<String>()
+            val firstRest = calloutMatch.groupValues[2].trim()
+            if (firstRest.isNotEmpty()) bodyLines.add(firstRest)
+            i += 1
+            while (i < rawLines.size && rawLines[i].trimStart().startsWith(">")) {
+                val qLine = rawLines[i].trimStart().removePrefix(">").trim()
+                if (qLine.isNotEmpty()) bodyLines.add(qLine)
+                i += 1
+            }
+            blocks.add(MarkdownBlock.Callout(kind, bodyLines))
+            continue
+        }
+
+        // Standard Blockquotes (> ...)
+        if (trimmed.startsWith(">")) {
+            val quoteParts = mutableListOf<String>()
+            while (i < rawLines.size && rawLines[i].trimStart().startsWith(">")) {
+                val qLine = rawLines[i].trimStart().removePrefix(">").trim()
+                if (qLine.isNotEmpty()) quoteParts.add(qLine)
+                i += 1
+            }
+            if (quoteParts.isNotEmpty()) {
+                blocks.add(MarkdownBlock.Quote(quoteParts.joinToString("\n")))
+            }
+            continue
+        }
+
+        // Task checkbox list items (- [x] / - [ ])
+        val checkboxMatch = checkboxRegex.matchEntire(line)
+        if (checkboxMatch != null) {
+            val indent = (checkboxMatch.groupValues[1].length / 2).coerceIn(0, 2)
+            val checked = checkboxMatch.groupValues[2].equals("x", ignoreCase = true)
+            val text = checkboxMatch.groupValues[3].trim()
+            blocks.add(MarkdownBlock.Bullet(indent, if (checked) "✓" else "○", text))
+            i += 1
+            continue
+        }
+
+        // Unordered bullet list items (- , * , + )
+        val bulletMatch = bulletRegex.matchEntire(line)
+        if (bulletMatch != null) {
+            val indent = (bulletMatch.groupValues[1].length / 2).coerceIn(0, 2)
+            val text = bulletMatch.groupValues[2].trim()
+            blocks.add(MarkdownBlock.Bullet(indent, if (indent == 0) "•" else "◦", text))
+            i += 1
+            continue
+        }
+
+        // Numbered list items (1. , 2. )
+        val numberedMatch = numberedRegex.matchEntire(line)
+        if (numberedMatch != null) {
+            val indent = (numberedMatch.groupValues[1].length / 2).coerceIn(0, 2)
+            val num = numberedMatch.groupValues[2]
+            val text = numberedMatch.groupValues[3].trim()
+            blocks.add(MarkdownBlock.Numbered(indent, num, text))
+            i += 1
+            continue
+        }
+
+        // Normal paragraph text
+        blocks.add(MarkdownBlock.Paragraph(trimmed))
+        i += 1
+    }
+
+    return blocks
+}
+
+private fun AnnotatedString.Builder.appendMarkdownInline(
+    text: String,
+    primary: Color,
+    boldColor: Color
+) {
+    var i = 0
+    val len = text.length
+    while (i < len) {
+        val ch = text[i]
+
+        // Escaped Markdown symbol (\*, \#, \_, \`, etc.)
+        if (ch == '\\' && i + 1 < len && text[i + 1] in "*_`~#[]()>+-!") {
+            append(text[i + 1])
+            i += 2
+            continue
+        }
+
+        // Inline code (`code`)
+        if (ch == '`') {
+            val end = text.indexOf('`', i + 1)
+            if (end > i + 1) {
+                withStyle(
+                    SpanStyle(
+                        fontFamily = FontFamily.Monospace,
+                        color = primary,
+                        background = Color(0xFF171E2E),
+                        fontSize = 11.sp
+                    )
+                ) {
+                    append(" ${text.substring(i + 1, end)} ")
+                }
+                i = end + 1
+                continue
+            }
+        }
+
+        // Markdown Image (![alt](url)) -> show alt text cleanly or skip raw syntax
+        if (ch == '!' && i + 1 < len && text[i + 1] == '[') {
+            val closeBracket = text.indexOf(']', i + 2)
+            if (closeBracket != -1 && closeBracket + 1 < len && text[closeBracket + 1] == '(') {
+                val closeParen = text.indexOf(')', closeBracket + 2)
+                if (closeParen != -1) {
+                    val alt = text.substring(i + 2, closeBracket).trim()
+                    if (alt.isNotEmpty()) append(alt)
+                    i = closeParen + 1
+                    continue
+                }
+            }
+        }
+
+        // Markdown Link ([Label](https://...)) -> render styled Label without raw brackets/URL
+        if (ch == '[') {
+            val closeBracket = text.indexOf(']', i + 1)
+            if (closeBracket > i + 1 && closeBracket + 1 < len && text[closeBracket + 1] == '(') {
+                val closeParen = text.indexOf(')', closeBracket + 2)
+                if (closeParen != -1) {
+                    val label = text.substring(i + 1, closeBracket)
+                    withStyle(
+                        SpanStyle(
+                            color = primary,
+                            fontWeight = FontWeight.SemiBold,
+                            textDecoration = TextDecoration.Underline
+                        )
+                    ) {
+                        appendMarkdownInline(label, primary, primary)
+                    }
+                    i = closeParen + 1
+                    continue
+                }
+            }
+        }
+
+        // Bold + Italic (***text***)
+        if (text.startsWith("***", i)) {
+            val end = text.indexOf("***", i + 3)
+            if (end > i + 3) {
+                withStyle(
+                    SpanStyle(
+                        fontWeight = FontWeight.Bold,
+                        fontStyle = FontStyle.Italic,
+                        color = boldColor
+                    )
+                ) {
+                    appendMarkdownInline(text.substring(i + 3, end), primary, boldColor)
+                }
+                i = end + 3
+                continue
+            }
+        }
+
+        // Bold (**text**)
+        if (text.startsWith("**", i)) {
+            val end = text.indexOf("**", i + 2)
+            if (end > i + 2) {
+                withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = boldColor)) {
+                    appendMarkdownInline(text.substring(i + 2, end), primary, boldColor)
+                }
+                i = end + 2
+                continue
+            }
+        }
+
+        // Bold (__text__) at word boundary
+        if (text.startsWith("__", i) && (i == 0 || !text[i - 1].isLetterOrDigit())) {
+            val end = text.indexOf("__", i + 2)
+            if (end > i + 2 && (end + 2 == len || !text[end + 2].isLetterOrDigit())) {
+                withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = boldColor)) {
+                    appendMarkdownInline(text.substring(i + 2, end), primary, boldColor)
+                }
+                i = end + 2
+                continue
+            }
+        }
+
+        // Strikethrough (~~text~~)
+        if (text.startsWith("~~", i)) {
+            val end = text.indexOf("~~", i + 2)
+            if (end > i + 2) {
+                withStyle(
+                    SpanStyle(
+                        textDecoration = TextDecoration.LineThrough,
+                        color = Color(0xFF7B8399)
+                    )
+                ) {
+                    appendMarkdownInline(text.substring(i + 2, end), primary, Color(0xFF7B8399))
+                }
+                i = end + 2
+                continue
+            }
+        }
+
+        // Italic (*text*)
+        if (ch == '*' && i + 1 < len && text[i + 1] != ' ' && text[i + 1] != '*') {
+            val end = text.indexOf('*', i + 1)
+            if (end > i + 1 && text[end - 1] != ' ') {
+                withStyle(SpanStyle(fontStyle = FontStyle.Italic, color = Color(0xFFD6DCEB))) {
+                    appendMarkdownInline(text.substring(i + 1, end), primary, boldColor)
+                }
+                i = end + 1
+                continue
+            }
+        }
+
+        // Italic (_text_) at word boundary (preserves snake_case identifiers)
+        if (ch == '_' && (i == 0 || !text[i - 1].isLetterOrDigit()) && i + 1 < len && text[i + 1] != ' ' && text[i + 1] != '_') {
+            val end = text.indexOf('_', i + 1)
+            if (end > i + 1 && text[end - 1] != ' ' && (end + 1 == len || !text[end + 1].isLetterOrDigit())) {
+                withStyle(SpanStyle(fontStyle = FontStyle.Italic, color = Color(0xFFD6DCEB))) {
+                    appendMarkdownInline(text.substring(i + 1, end), primary, boldColor)
+                }
+                i = end + 1
+                continue
+            }
+        }
+
+        append(ch)
+        i += 1
+    }
+}
+
+private fun parseMarkdownInline(
+    text: String,
+    primary: Color,
+    boldColor: Color = Color.White
+): AnnotatedString {
+    return buildAnnotatedString {
+        appendMarkdownInline(text, primary, boldColor)
+    }
+}
+
+@Composable
+private fun GitHubMarkdownNotes(
+    markdown: String,
+    primary: Color,
+    modifier: Modifier = Modifier
+) {
+    val blocks = remember(markdown) { parseGitHubMarkdownBlocks(markdown) }
+
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(7.dp)
+    ) {
+        blocks.forEach { block ->
+            when (block) {
+                is MarkdownBlock.Heading -> {
+                    val fontSize = when (block.level) {
+                        1 -> 15.5.sp
+                        2 -> 14.5.sp
+                        3 -> 13.5.sp
+                        else -> 12.5.sp
+                    }
+                    val headingColor = when (block.level) {
+                        1, 2 -> Color.White
+                        3 -> Color(0xFFF1F5F9)
+                        else -> primary
+                    }
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = if (block.level <= 3) 4.dp else 2.dp)
+                    ) {
+                        Text(
+                            text = parseMarkdownInline(block.text, primary, headingColor),
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontSize = fontSize,
+                                fontWeight = FontWeight.Bold,
+                                lineHeight = (fontSize.value + 5f).sp
+                            ),
+                            color = headingColor
+                        )
+                        if (block.level <= 2) {
+                            Spacer(modifier = Modifier.height(5.dp))
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(0.75.dp)
+                                    .background(Color(0xFF232836))
+                            )
+                        }
+                    }
+                }
+
+                is MarkdownBlock.Bullet -> {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = (block.indent * 12).dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Text(
+                            text = block.marker,
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                lineHeight = 18.sp
+                            ),
+                            color = if (block.marker == "✓") Color(0xFF10B981) else primary,
+                            modifier = Modifier.width(14.dp)
+                        )
+                        Text(
+                            text = parseMarkdownInline(block.text, primary),
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontSize = 12.sp,
+                                lineHeight = 18.sp
+                            ),
+                            color = Color(0xFFC7CEDF),
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+
+                is MarkdownBlock.Numbered -> {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = (block.indent * 12).dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Text(
+                            text = "${block.number}.",
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                lineHeight = 18.sp
+                            ),
+                            color = primary,
+                            modifier = Modifier.width(20.dp)
+                        )
+                        Text(
+                            text = parseMarkdownInline(block.text, primary),
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontSize = 12.sp,
+                                lineHeight = 18.sp
+                            ),
+                            color = Color(0xFFC7CEDF),
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+
+                is MarkdownBlock.Callout -> {
+                    val calloutColor = when (block.kind) {
+                        "WARNING", "CAUTION" -> Color(0xFFF59E0B)
+                        "IMPORTANT" -> Color(0xFF818CF8)
+                        "TIP" -> Color(0xFF10B981)
+                        else -> primary
+                    }
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(calloutColor.copy(alpha = 0.10f))
+                            .border(0.75.dp, calloutColor.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
+                            .padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = block.kind,
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.8.sp
+                            ),
+                            color = calloutColor
+                        )
+                        block.lines.forEach { cLine ->
+                            Text(
+                                text = parseMarkdownInline(cLine, primary),
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    fontSize = 11.5.sp,
+                                    lineHeight = 17.sp
+                                ),
+                                color = Color(0xFFD6DCEB)
+                            )
+                        }
+                    }
+                }
+
+                is MarkdownBlock.Quote -> {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xFF121622))
+                            .padding(horizontal = 10.dp, vertical = 8.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .width(2.5.dp)
+                                .height(16.dp)
+                                .clip(CircleShape)
+                                .background(primary.copy(alpha = 0.70f))
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = parseMarkdownInline(block.text, primary),
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontSize = 11.5.sp,
+                                lineHeight = 17.sp
+                            ),
+                            color = Color(0xFFA8B1C7),
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+
+                is MarkdownBlock.CodeBlock -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xFF06080D))
+                            .border(0.75.dp, Color(0xFF1D2230), RoundedCornerShape(8.dp))
+                            .horizontalScroll(rememberScrollState())
+                            .padding(10.dp)
+                    ) {
+                        Text(
+                            text = block.lines.joinToString("\n"),
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp,
+                                lineHeight = 16.sp
+                            ),
+                            color = Color(0xFFC7CEDF)
+                        )
+                    }
+                }
+
+                is MarkdownBlock.Divider -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 3.dp)
+                            .height(0.75.dp)
+                            .background(Color(0xFF232836))
+                    )
+                }
+
+                is MarkdownBlock.Paragraph -> {
+                    Text(
+                        text = parseMarkdownInline(block.text, primary),
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontSize = 12.sp,
+                            lineHeight = 18.sp
+                        ),
+                        color = Color(0xFFC7CEDF)
+                    )
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun UpdateAvailableDialog(
     update: AppUpdateInfo,
@@ -9903,100 +10444,131 @@ private fun UpdateAvailableDialog(
     onOpenReleasePage: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
-    VaultDialogShell(onDismiss = onDismiss) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .imePadding()
+                .padding(horizontal = 20.dp, vertical = 16.dp),
+            contentAlignment = Alignment.Center
         ) {
-            Text(
-                text = "Update Available",
-                style = MaterialTheme.typography.headlineMedium.copy(fontSize = 20.sp),
-                color = Color.White,
-                modifier = Modifier.weight(1f)
-            )
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(
-                        if (update.isPreRelease) Color(0xFFF59E0B).copy(alpha = 0.18f) else primary.copy(alpha = 0.18f)
-                    )
-                    .padding(horizontal = 8.dp, vertical = 4.dp)
-            ) {
-                Text(
-                    text = if (update.isPreRelease) "Pre-Release" else "Stable",
-                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                    color = if (update.isPreRelease) Color(0xFFF59E0B) else primary
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(6.dp))
-        Text(
-            text = "${update.releaseName} (${update.tagName})${if (update.publishedAt.isNotBlank()) " • ${update.publishedAt}" else ""}",
-            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-            color = primary
-        )
-        Text(
-            text = "Installed: v$APP_VERSION_NAME (Build $APP_VERSION_CODE)",
-            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
-            color = Color(0xFF8B93A7)
-        )
-
-        if (update.notes.isNotBlank()) {
-            Spacer(modifier = Modifier.height(12.dp))
-            Box(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(Color(0xFF0B0D13))
-                    .border(0.75.dp, Color(0xFF202532), RoundedCornerShape(12.dp))
-                    .padding(12.dp)
+                    .clip(RoundedCornerShape(22.dp))
+                    .background(Color(0xFF10131B))
+                    .border(0.85.dp, Color(0xFF252A38), RoundedCornerShape(22.dp))
+                    .padding(20.dp)
             ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Update Available",
+                        style = MaterialTheme.typography.headlineMedium.copy(fontSize = 20.sp),
+                        color = Color.White,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(
+                                if (update.isPreRelease) Color(0xFFF59E0B).copy(alpha = 0.18f) else primary.copy(alpha = 0.18f)
+                            )
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = if (update.isPreRelease) "Pre-Release" else "Stable",
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                            color = if (update.isPreRelease) Color(0xFFF59E0B) else primary,
+                            maxLines = 1
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = update.notes.take(1200),
-                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp, lineHeight = 17.sp),
-                    color = Color(0xFFC7CEDF)
+                    text = "${update.releaseName} (${update.tagName})${if (update.publishedAt.isNotBlank()) " • ${update.publishedAt}" else ""}",
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = primary
                 )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        if (update.apkDownloadUrl != null) {
-            Button(
-                onClick = { onDownloadApk(update.apkDownloadUrl) },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = primary,
-                    contentColor = Color(0xFF07080B)
+                Text(
+                    text = "Installed: v$APP_VERSION_NAME (Build $APP_VERSION_CODE)",
+                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+                    color = Color(0xFF8B93A7)
                 )
-            ) {
-                Text("Download APK", fontWeight = FontWeight.Bold)
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-        }
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            OutlinedButton(
-                onClick = onDismiss,
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(12.dp),
-                border = BorderStroke(0.85.dp, Color(0xFF2B3140))
-            ) {
-                Text("Later", color = Color(0xFFB5BCD0))
-            }
-            OutlinedButton(
-                onClick = { onOpenReleasePage(update.htmlUrl) },
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(12.dp),
-                border = BorderStroke(0.85.dp, primary.copy(alpha = 0.45f))
-            ) {
-                Text("Open GitHub", color = primary, maxLines = 1)
+                if (update.notes.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 320.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color(0xFF0B0D13))
+                            .border(0.75.dp, Color(0xFF202532), RoundedCornerShape(12.dp))
+                            .verticalScroll(rememberScrollState())
+                            .padding(14.dp)
+                    ) {
+                        GitHubMarkdownNotes(
+                            markdown = update.notes,
+                            primary = primary,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                if (update.apkDownloadUrl != null) {
+                    Button(
+                        onClick = { onDownloadApk(update.apkDownloadUrl) },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = primary,
+                            contentColor = Color(0xFF07080B)
+                        )
+                    ) {
+                        Text("Download APK", fontWeight = FontWeight.Bold)
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(0.85.dp, Color(0xFF2B3140))
+                    ) {
+                        Text("Later", color = Color(0xFFB5BCD0))
+                    }
+                    OutlinedButton(
+                        onClick = { onOpenReleasePage(update.htmlUrl) },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(0.85.dp, primary.copy(alpha = 0.45f))
+                    ) {
+                        Text("Open GitHub", color = primary, maxLines = 1)
+                    }
+                }
             }
         }
     }

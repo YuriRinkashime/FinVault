@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-2.3.1%20Stable-38BDF8?style=flat-square" alt="Version 2.3.1 Stable" />
+  <img src="https://img.shields.io/badge/Version-2.3.2%20Stable-38BDF8?style=flat-square" alt="Version 2.3.2 Stable" />
   <img src="https://img.shields.io/badge/Platform-Android%208.0%2B%20(API%2026%2B)-10B981?style=flat-square" alt="Android 8.0+" />
   <img src="https://img.shields.io/badge/UI-Jetpack%20Compose%20%2B%20Material%203-818CF8?style=flat-square" alt="Jetpack Compose" />
   <img src="https://img.shields.io/badge/Privacy-100%25%20Offline%20%E2%80%A2%20Zero%20Ads-14B8A6?style=flat-square" alt="100% Offline" />
@@ -78,14 +78,17 @@ FinVault/
 
 ## Installing & Upgrading
 
-1. Download the latest signed APK from [GitHub Releases](https://github.com/YuriRinkashime/FinVault/releases/latest) and tap it to install (or update directly over an existing signed release).
-2. **Upgrading from an older pre-release or debug build (`v2.2.0` or earlier)?**
-   - Try installing the new APK directly first.
-   - If Android displays ***"App not installed as package conflicts with an existing package"*** (caused by a different signing key between earlier debug/pre-release APKs and the signed production release):
-     1. Open your existing FinVault app → **Settings → Offline Backup & Export → Copy Backup** (save the JSON text in a Notes app).
-     2. Uninstall the old build.
-     3. Install the new **`FinVault Yuri`** APK and complete the Setup Wizard.
-     4. Open **Settings → Offline Backup & Export → Restore JSON → Paste → Restore Data** (legacy `v2.1.0`/`v2.2.0` backups are fully supported).
+1. Download the latest signed APK from [GitHub Releases](https://github.com/YuriRinkashime/FinVault/releases/latest) and tap it to install (or update directly over **`v2.3.2`** or newer).
+
+> [!IMPORTANT]
+> **Upgrading from `v2.3.1` or earlier (`v2.2.0`, `v2.3.0`, `v2.3.1`)?**
+> Earlier releases were built across different devices with separate signing keys, so Android will show ***"App not installed as package conflicts with an existing package."*** Starting with **`v2.3.2`**, all builds use one permanent unified release keystore so every future update installs smoothly in-place.
+>
+> Perform this **one-time backup & clean reinstall** (zero data loss):
+> 1. Open your existing FinVault app → **Settings → Offline Backup & Export → Copy Backup** and paste/save the JSON text in your Notes app.
+> 2. Uninstall the old FinVault app.
+> 3. Install **`FinVault-Yuri-v2.3.2.apk`** (or newer) and complete the quick Setup Wizard.
+> 4. Open **Settings → Offline Backup & Export → Restore JSON → Paste → Restore Data** (all `v2.1.0`–`v2.3.1` backups are fully supported).
 
 ## Building from Source
 

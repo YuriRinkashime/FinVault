@@ -4,6 +4,16 @@ All notable changes to **FinVault Yuri** follow Semantic Versioning (`MAJOR.MINO
 
 ---
 
+## [v2.3.2] — Patch Release (Build 7) — 2026-11-24
+### Added
+- **Rich GitHub Markdown Renderer in Updater:** The **Update Available** dialog now renders GitHub release notes natively using Jetpack Compose `AnnotatedString`—supporting headings (`#`–`######`), **bold**, *italic*, ~~strikethrough~~, `inline code`, bullet/numbered/checkbox lists, GitHub callout alerts (`[!IMPORTANT]`, `[!NOTE]`, `[!WARNING]`), blockquotes, code blocks, horizontal dividers, and styled links with zero raw Markdown symbols.
+
+### Fixed
+- **Full Scrollable Release Notes & Action Bar Layout:** Removed the 1,200-character truncation limit in `UpdateAvailableDialog` so complete release notes display cleanly inside a dedicated scrollable viewport while keeping the **Download APK**, **Later**, and **Open GitHub** buttons permanently visible at the bottom.
+- **Unified Release Keystore Baseline:** Standardized production APK signing under a single permanent release keystore across mobile and PC builds so all future updates install cleanly in-place without package signature conflicts.
+
+---
+
 ## [v2.3.1] — Patch Release (Build 6) — 2026-11-24
 ### Added
 - **Goal Reached Celebration Animation:** Reaching 100% on any Savings Goal (via Goal Deposit, Expense-to-Goal Transfer, Purchase Simulator Save Instead, Quarantine Resist & Save, or Goal Editor) now triggers a native Jetpack Compose confetti burst, pulsing titanium halo, and a dismissible **Milestone Achieved** card that respects the global **Smooth Animations** toggle.
